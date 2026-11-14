@@ -1,0 +1,23 @@
+{
+  "name": "rastame-mr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RastaME MR — experimento de realidade mista com gamepad (PS4) + Android (WebXR/ARCore) e backend de SLAM/nuvem de pontos",
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.js",
+    "avatar": "python tools/vox2json.py",
+    "cert": "node tools/make-cert.mjs",
+    "reconstruct": "python tools/reconstruct_open3d.py",
+    "test": "node --test test/pipeline.test.js",
+    "build": "node tools/build.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "three": "^0.187.0",
+    "ws": "^8.23.0"
+  }
+}

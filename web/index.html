@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<title>RastaME MR</title>
+<link rel="stylesheet" href="./css/app.css">
+<script type="importmap">
+{ "imports": {
+  "three": "/vendor/three/build/three.module.js",
+  "three/addons/": "/vendor/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<main id="start">
+  <header>
+    <h1>RastaME <span>MR</span></h1>
+    <p>Realidade mista com controle de PS4 e um celular Android. O ARCore faz o SLAM, o depth vira um mapa de voxels em escala 1:1 e o seu avatar anda, pula e cai nas superfícies de verdade.</p>
+  </header>
+
+  <section class="checks">
+    <div class="check" id="ck-xr"><i></i><span>WebXR / ARCore</span><em>verificando…</em></div>
+    <div class="check" id="ck-pad"><i></i><span>Controle PS4</span><em>aperte qualquer botão do controle</em></div>
+    <div class="check" id="ck-srv"><i></i><span>Backend SLAM</span><em>conectando…</em></div>
+  </section>
+
+  <section class="opts">
+    <label>Altura do avatar
+      <select id="opt-height">
+        <option value="0.15">15 cm (boneco de mesa)</option>
+        <option value="0.25" selected>25 cm</option>
+        <option value="0.5">50 cm</option>
+        <option value="1.75">1,75 m (tamanho real)</option>
+      </select>
+    </label>
+    <label>Voxel da física
+      <select id="opt-res">
+        <option value="0.02">2 cm (mais detalhe)</option>
+        <option value="0.03" selected>3 cm</option>
+        <option value="0.05">5 cm (mais leve)</option>
+      </select>
+    </label>
+  </section>
+
+  <div class="actions">
+    <button id="btn-ar" class="primary" disabled>Entrar em AR</button>
+    <a id="btn-sim" class="ghost" href="?sim=1">Simulador (PC)</a>
+  </div>
+  <p id="why" class="why"></p>
+
+  <details class="help">
+    <summary>Comandos</summary>
+    <p class="kbd">Sem controle: use o joystick e os botões que aparecem na tela (arraste o dedo além da borda do joystick para correr).</p>
+    <table>
+      <tr><td>Analógico esq.</td><td>andar / correr (relativo à câmera)</td></tr>
+      <tr><td>R2 (pressão)</td><td>sprint · L2 segurado: andar devagar</td></tr>
+      <tr><td>✕</td><td>colocar o avatar no alvo · pular</td></tr>
+      <tr><td>○ / toque na tela</td><td>arremessar bolinha (física real)</td></tr>
+      <tr><td>△</td><td>derrubar uma caixa na frente do avatar</td></tr>
+      <tr><td>□</td><td>acenar</td></tr>
+      <tr><td>Direcional</td><td>↑ comemorar · ↓ sentar · ← palmas · → danças</td></tr>
+      <tr><td>L1 / R1</td><td>diminuir / aumentar o avatar</td></tr>
+      <tr><td>R3</td><td>recolocar o avatar no alvo</td></tr>
+      <tr><td>L3</td><td>liga/desliga oclusão pelo mundo real</td></tr>
+      <tr><td>Options</td><td>mostrar a malha de voxels (debug)</td></tr>
+      <tr><td>Share</td><td>gravar sessão no backend (para reconstrução 3D)</td></tr>
+      <tr><td>Touchpad</td><td>apagar o mapa</td></tr>
+    </table>
+    <p class="kbd">No PC: WASD, Espaço, Shift, G, F, E, setas, Q/R, P, C, V, M · IJKL orbita a câmera.</p>
+  </details>
+</main>
+
+<div id="hud" hidden>
+  <div id="chips"></div>
+  <div id="toast"></div>
+  <div id="hint"></div>
+  <button id="btn-exit" aria-label="Sair">✕</button>
+</div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

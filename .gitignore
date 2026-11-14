@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/
+certs/
+.vercel/
+*.log
+# vídeo de referência (8 MB) fica fora do repositório
+*.mp4
