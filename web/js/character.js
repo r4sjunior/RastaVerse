@@ -40,6 +40,8 @@ export class Character {
     this.kcc.setMinSlopeSlideAngle(65 * Math.PI / 180);
     this.kcc.setApplyImpulsesToDynamicBodies(true);
     this.kcc.setSlideEnabled(true);
+    // objeto removido do mundo (fim de minigame, "Limpar"...) enquanto está nas mãos: solta antes
+    world.onPropRemoved = (p) => { if (this.held === p) this.release(false); };
   }
 
   get height() { return this.avatar.height; }
@@ -137,6 +139,7 @@ export class Character {
     prop.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
     for (let i = 0; i < prop.body.numColliders(); i++) prop.body.collider(i).setSensor(true); // não empurra o próprio avatar
     this.held = prop;
+    prop.held = true;            // o mundo não remove objeto que está nas mãos (limite de objetos)
     this.avatar.carry = true;
     this.emote = null;
     this.avatar.play('pickUp', { loop: false, fade: 0.08, restart: true, speed: 1.6 });
@@ -160,6 +163,7 @@ export class Character {
     else if (throwIt) pr.body.setLinvel({ x: this.vel.x + _fwd.x * 3.2 * k, y: 2.2 * k, z: this.vel.z + _fwd.z * 3.2 * k }, true);
     else pr.body.setLinvel({ x: this.vel.x + _fwd.x * 0.4 * k, y: 0, z: this.vel.z + _fwd.z * 0.4 * k }, true);
     this.held = null;
+    pr.held = false;
     this.avatar.carry = false;
     return pr;
   }

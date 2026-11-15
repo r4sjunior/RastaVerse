@@ -14,7 +14,7 @@ const chunkOf = (i, j, k) => packKey(Math.floor(i / CH), Math.floor(j / CH), Mat
 export const G = 9.81;
 
 export class World {
-  constructor(RAPIER, scene, { res = 0.03, capacity = 40000, carve = true } = {}) {
+  constructor(RAPIER, scene, { res = 0.03, capacity = 60000, carve = true } = {}) {
     this.R = RAPIER;
     this.scene = scene;
     this.res = res;
@@ -158,7 +158,11 @@ export class World {
 
   _add(key, top) {
     if (this.slot.has(key)) return;
-    if (this.keys.length >= this.capacity) return;
+    if (this.keys.length >= this.capacity) {
+      // mapa cheio: avisa uma vez (antes as áreas novas ficavam sem física em silêncio)
+      if (!this.full) { this.full = true; this.onFull?.(); }
+      return;
+    }
     const [i, j, k] = unpackKey(key, this._t);
     const r = this.res;
     // o topo fica na altura média medida (não no topo quantizado do voxel)
@@ -267,6 +271,7 @@ export class World {
     this.pendingAdd.clear();
     for (const k of this.keys) this.pendingRemove.add(k);
     this.minY = Infinity;
+    this.full = false;
   }
 
   /** reconstrói já todos os blocos pendentes (testes / depois de apagar o mapa) */
@@ -334,19 +339,37 @@ export class World {
     this.scene.add(mesh);
     const p = { kind, body, mesh, size, born: performance.now() };
     this.props.push(p);
-    while (this.props.length > 40) this.removeProp(this.props[0]);
+    // limite de objetos: sai o mais antigo que NÃO está nas mãos do avatar
+    while (this.props.length > 40) {
+      const old = this.props.find((q) => !q.held && q !== p);
+      if (!old) break;
+      this.removeProp(old);
+    }
     return p;
   }
 
+  /**
+   * Remove um objeto do mundo. Quem o segura é avisado ANTES (onPropRemoved): usar um corpo do Rapier
+   * já removido trava o WASM ("unreachable") e congela o app inteiro.
+   */
   removeProp(p) {
+    const i = this.props.indexOf(p);
+    if (i < 0) return;
+    this.onPropRemoved?.(p);
     this.physics.removeRigidBody(p.body);
     this.scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose();
-    this.props.splice(this.props.indexOf(p), 1);
+    this.props.splice(i, 1);
   }
 
   step(dt) {
-    this.physics.timestep = Math.min(Math.max(dt, 1 / 240), 1 / 30);
-    this.physics.step();
+    // tempo real em subpassos de no máximo 1/60 s (até 3 por quadro). Antes era UM passo limitado a
+    // 1/30 s: abaixo de 30 FPS bolas e caixas andavam em câmera lenta enquanto o avatar não, e passos
+    // grandes deixavam as pilhas de caixas instáveis. Sempre ≥1 passo por quadro (o avatar cinemático
+    // depende disso para andar).
+    const d = Math.min(Math.max(dt, 1 / 240), 0.05);
+    const n = Math.min(3, Math.ceil(d * 60 - 1e-6));
+    this.physics.timestep = d / n;
+    for (let s = 0; s < n; s++) this.physics.step();
     const floor = (Number.isFinite(this.minY) ? this.minY : 0) - 4;
     for (let i = this.props.length - 1; i >= 0; i--) {
       const p = this.props[i];

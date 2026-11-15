@@ -26,9 +26,14 @@ export class VoxelMap {
    * @param {number} o.occ     limiar para considerar ocupado
    * @param {number} o.max     teto da evidência (quanto maior, mais "teimoso")
    */
-  constructor({ res = 0.03, hit = 2, miss = 1, occ = 4, max = 24, trackY = false } = {}) {
+  constructor({ res = 0.03, hit = 2, miss = 1, occ = 4, max = 24, trackY = false, layers = false, prune = false } = {}) {
     this.res = res; this.hit = hit; this.miss = miss; this.occ = occ; this.max = max;
     this.cells = new Map();     // key -> evidência
+    // índice opcional dos voxels OCUPADOS por camada vertical j (j -> Set<key>): consultas por altura
+    // sem varrer o mapa inteiro (o mapa cresce a sessão toda)
+    this.layers = layers ? new Map() : null;
+    // células abaixo do limiar tocadas desde a última limpeza (prune): ruído que nunca se confirmou expira
+    this.touched = prune ? new Set() : null;
     // altura média dos pontos dentro de cada voxel: dá o topo real da superfície (sub-voxel)
     this.meanY = trackY ? new Map() : null;
     this.added = new Set();
@@ -46,7 +51,14 @@ export class VoxelMap {
     let after = Math.max(0, Math.min(this.max, before + delta));
     if (after === before) return;
     if (after === 0) { this.cells.delete(key); this.meanY?.delete(key); } else this.cells.set(key, after);
+    if (this.touched && after > 0 && after < this.occ) this.touched.add(key);
     const wasOcc = before >= this.occ, isOcc = after >= this.occ;
+    if (wasOcc !== isOcc && this.layers) {
+      const j = Math.floor(key / SPAN) % SPAN - OFF;
+      let L = this.layers.get(j);
+      if (isOcc) { if (!L) this.layers.set(j, L = new Set()); L.add(key); }
+      else if (L) { L.delete(key); if (!L.size) this.layers.delete(j); }
+    }
     if (!wasOcc && isOcc) {
       this.occupied++;
       if (this.removed.has(key)) this.removed.delete(key); else this.added.add(key);
@@ -97,6 +109,25 @@ export class VoxelMap {
     }
   }
 
+  /** voxels ocupados da camada j (precisa de layers: true) */
+  layer(j) { return this.layers?.get(j); }
+
+  /**
+   * Apaga as células que NÃO chegaram a ser confirmadas e não receberam nenhum ponto desde a última
+   * chamada (ruído antigo do depth). Sem isso o mapa só cresce e as varreduras ficam cada vez mais caras.
+   * @returns {number} células removidas
+   */
+  prune() {
+    if (!this.touched) return 0;
+    let n = 0;
+    for (const [key, v] of this.cells) {
+      if (v >= this.occ || this.touched.has(key)) continue;
+      this.cells.delete(key); this.meanY?.delete(key); n++;
+    }
+    this.touched.clear();
+    return n;
+  }
+
   /** devolve e limpa as mudanças desde a última chamada */
   drain() {
     const out = { added: [...this.added], removed: [...this.removed] };
@@ -119,6 +150,6 @@ export class VoxelMap {
   clear() {
     for (const [key, v] of this.cells) if (v >= this.occ) this.removed.add(key);
     this.added.clear();
-    this.cells.clear(); this.meanY?.clear(); this.occupied = 0;
+    this.cells.clear(); this.meanY?.clear(); this.layers?.clear(); this.touched?.clear(); this.occupied = 0;
   }
 }

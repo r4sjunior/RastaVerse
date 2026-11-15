@@ -120,3 +120,28 @@ test('filtro de pixels voadores descarta a borda entre objeto e fundo', () => {
   unprojectDepth(f, (x, y, z) => { if (-z > 0.7 && -z < 0.9) semFiltro++; }, { step: 1, maxDepth: 5, edge: 0 });
   assert.equal(semFiltro, 1);
 });
+
+test('mapa: índice por camada acompanha voxels confirmados e apagados (inclusive índices negativos)', () => {
+  const m = new VoxelMap({ res: 0.05, layers: true });
+  for (let n = 0; n < 2; n++) { m.addPoint(1, 0.52, 0); m.addPoint(-2, -0.33, 1.5); }
+  const j1 = Math.floor(0.52 / 0.05), j2 = Math.floor(-0.33 / 0.05);
+  assert.equal(m.layer(j1)?.size, 1);
+  assert.equal(m.layer(j2)?.size, 1);
+  assert.ok(m.layer(j1).has(m.key(1, 0.52, 0)));
+  for (let i = 0; i < 10; i++) m.carve(0, 0.52, 0, 3, 0.52, 0);
+  assert.equal(m.layer(j1), undefined);
+  m.clear();
+  assert.equal(m.layer(j2), undefined);
+});
+
+test('mapa: prune esquece ruído não confirmado e mantém voxels confirmados e ruído recente', () => {
+  const m = new VoxelMap({ res: 0.05, occ: 6, prune: true });
+  m.addPoint(0, 0, 0); m.addPoint(0, 0, 0); m.addPoint(0, 0, 0);   // confirmado (2+2+2 = 6)
+  m.addPoint(1, 0, 0);                                              // ruído (2 < 6)
+  assert.equal(m.prune(), 0);                                       // ruído foi tocado neste intervalo
+  m.addPoint(2, 0, 0);                                              // ruído novo
+  assert.equal(m.prune(), 1);                                       // só o ruído antigo sai
+  assert.ok(m.isOccupiedAt(0, 0, 0));
+  assert.ok(m.cells.has(m.key(2, 0, 0)));
+  assert.ok(!m.cells.has(m.key(1, 0, 0)));
+});

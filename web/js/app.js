@@ -15,6 +15,7 @@ const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
 const SIM = params.has('sim');
 const DANCES = ['danceBreakin', 'danceCWalk', 'danceShuffle', 'danceHype', 'danceSnoop', 'danceTechno', 'vibe'];
+const DANCE_NAME = { danceBreakin: 'Break', danceCWalk: 'C-Walk', danceShuffle: 'Shuffle', danceHype: 'Hype', danceSnoop: 'Snoop', danceTechno: 'Techno', vibe: 'Na vibe' };
 
 // ------------------------------------------------------------------ preferências
 const cfg = { height: 0.25, res: 0.03, orient: 'free' };
@@ -56,7 +57,10 @@ preload.avatar.catch(() => {});
 
 // ------------------------------------------------------------------ tela inicial
 const pad = new Pad();
-const link = new Link('phone');
+// backend de nuvem de pontos: só quando o app vem do servidor local (rede de casa) ou com ?backend=1.
+// Na Vercel não existe backend — antes o app tentava conectar para sempre.
+const LOCAL_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
+const link = new Link('phone', { enabled: params.has('backend') || LOCAL_HOST });
 function setCheck(id, state, text) {
   const el = $(id); el.className = 'check ' + state; el.querySelector('em').textContent = text;
 }
@@ -73,7 +77,7 @@ btnAr.disabled = true;
   }
   setCheck('#ck-xr', xrSupported ? 'ok' : 'bad', xrSupported ? 'pronto' : why);
   btnAr.disabled = false;
-  if (!xrSupported) { btnAr.disabled = true; setBtn('Abra no celular'); $('#why').textContent = why; $('#cam-note').hidden = true; }
+  if (!xrSupported) { btnAr.disabled = true; setBtn('Disponível no Chrome do Android'); $('#why').textContent = why; $('#cam-note').hidden = true; }
 })();
 const startTimer = setInterval(() => pad.poll(), 300);
 
@@ -175,7 +179,10 @@ async function boot() {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 50);
   scene.add(camera);
-  scene.add(new THREE.HemisphereLight(0xfff6e8, 0x5a5048, 1.5));
+  const hemi = new THREE.HemisphereLight(0xfff6e8, 0x5a5048, 1.5);
+  scene.add(hemi);
+  // luz do ambiente real (estimativa do ARCore): entra no lugar da luz fixa quando o aparelho fornece
+  const envProbe = new THREE.LightProbe(); envProbe.intensity = 0; scene.add(envProbe);
   const sun = new THREE.DirectionalLight(0xffffff, 1.8);
   sun.castShadow = true;
   sun.shadow.mapSize.set(512, 512);
@@ -189,7 +196,7 @@ async function boot() {
   const char = new Character(world, avatar, scene);
   char.onLand = (t) => pad.rumble(Math.min(1, t), 0.3, 90);
 
-  Object.assign(G, { renderer, scene, camera, world, char, avatar, sun });
+  Object.assign(G, { renderer, scene, camera, world, char, avatar, sun, hemi, envProbe, lightDir: null });
   buildOverlays();
   G.hud = new Hud($('#hud'), pad, {
     onExit: () => { if (G.session) G.session.end(); else location.href = location.pathname; },
@@ -208,6 +215,7 @@ async function boot() {
   G.hud.size(fmtSize(cfg.height));
   char.onRespawn = () => toast('Caiu onde a câmera não viu — mostre o chão para ele cair lá');
   world.onScores = onCalScores;
+  world.onFull = () => toast('Mapa cheio — áreas novas ficam sem física. Menu ⋯ → Apagar mapa e escaneie de novo');
   avatar.setSilhouette(world.occlusion);
   addEventListener('resize', () => {
     if (renderer.xr.isPresenting) return;
@@ -237,6 +245,8 @@ async function startAR() {
   await renderer.xr.setSession(session);
   G.session = session;
   G.refSpace = renderer.xr.getReferenceSpace();
+  // estimativa de luz (pedida em optionalFeatures): sem suporte, fica a luz fixa
+  if (session.requestLightProbe) session.requestLightProbe().then((p) => { G.lightProbe = p; }).catch(() => {});
   // em 'local-floor' o ARCore estima o piso em y=0: vira um chão físico de reserva
   // em 'local-floor' o y=0 é a ESTIMATIVA de chão do Chrome — só é usada depois de conferida (updateFloor)
   if (type === 'local-floor') G.floorGuess = 0;
@@ -267,10 +277,22 @@ function onXRFrame(t, frame) {
   const { renderer } = G;
   const ref = renderer.xr.getReferenceSpace();
   const pose = frame.getViewerPose(ref);
-  if (pose) {
+  // rastreamento perdido: sem pose, ou só orientação (emulatedPosition = o ARCore perdeu a posição)
+  const lost = !pose || pose.emulatedPosition;
+  if (lost !== G.trackLost) {
+    G.trackLost = lost;
+    if (lost) { G.reticleHit = null; G.trackLostAt = t; }
+    else if (G.placed && t - G.trackLostAt > 800) toast('Rastreamento recuperado');
+  }
+  if (pose && !lost) {
     _m.fromArray(pose.transform.matrix);
     G.camPos.setFromMatrixPosition(_m);
     G.camFwd.set(-_m.elements[8], -_m.elements[9], -_m.elements[10]).normalize();
+
+    if (G.lightProbe && (G.frameN || 0) % 6 === 0) {
+      const est = frame.getLightEstimate?.(G.lightProbe);
+      if (est) applyLightEstimate(est);
+    }
 
     // alvo (retícula) no centro da tela
     const hits = frame.getHitTestResults(G.hitCenter);
@@ -313,6 +335,25 @@ function onXRFrame(t, frame) {
   }
   tick(t);
   renderer.render(G.scene, G.camera);
+}
+
+/**
+ * Ilumina o avatar com a luz do cômodo: harmônicos esféricos do ARCore na LightProbe, cor/força da luz
+ * principal no "sol" e a DIREÇÃO dela na sombra (a sombra cai para o mesmo lado das sombras reais).
+ * Um pouco de luz fixa fica de reserva para o avatar não sumir em cômodo escuro.
+ */
+const _ld = new THREE.Vector3();
+function applyLightEstimate(est) {
+  const { envProbe, hemi, sun } = G;
+  envProbe.sh.fromArray(est.sphericalHarmonicsCoefficients);
+  envProbe.intensity = 1;
+  hemi.intensity = 0.6;
+  const I = est.primaryLightIntensity, m = Math.max(I.x, I.y, I.z, 1e-4);
+  sun.color.setRGB(I.x / m, I.y / m, I.z / m);
+  sun.intensity = THREE.MathUtils.clamp(m, 0.5, 2.5);
+  const d = est.primaryLightDirection;
+  _ld.set(d.x, Math.max(d.y, 0.35), d.z).normalize();   // luz muito rasante deixaria a sombra longe do avatar
+  G.lightDir = _ld;
 }
 
 // A convenção vertical do depth pode variar entre aparelhos/versões do Chrome. Antes de usar o depth,
@@ -461,8 +502,11 @@ function tick(t) {
     else { updatePreview(dt); if (pad.pressed(B.CROSS)) place(); }
   } else {
     handleButtons();
-    _move.set(0, 0, 0).addScaledVector(_right, pad.lx).addScaledVector(_fwd, -pad.ly);
-    char.update(dt, { move: _move, mag: pad.lm, sprint: pad.r2, walk: pad.held(B.L2), jump: pad.pressed(B.CROSS) });
+    // sem rastreamento a direção da câmera não é confiável: o avatar fica parado (a física continua)
+    const live = !G.trackLost;
+    _move.set(0, 0, 0);
+    if (live) _move.addScaledVector(_right, pad.lx).addScaledVector(_fwd, -pad.ly);
+    char.update(dt, { move: _move, mag: live ? pad.lm : 0, sprint: pad.r2, walk: pad.held(B.L2), jump: live && pad.pressed(B.CROSS) });
   }
   world.step(dt);
   G.games.update(dt);
@@ -579,8 +623,8 @@ function onHudAction(a) {
 
 function place() {
   if (G.phase === 'scan') return;
-  G.phase = 'play';
   if (!G.reticleHit) { toast('Mire numa mesa ou no chão'); return; }
+  G.phase = 'play';
   const p = G.retSmooth.clone();
   spawnAt(p);
   G.avatar.setGhost(false);
@@ -679,7 +723,7 @@ function handleButtons() {
   if (pad.pressed(B.UP)) char.playEmote('cheer');
   if (pad.pressed(B.DOWN)) char.playEmote('sitIdle', true);
   if (pad.pressed(B.LEFT)) char.playEmote('clap');
-  if (pad.pressed(B.RIGHT)) { const d = DANCES[G.danceIdx++ % DANCES.length]; char.playEmote(d, true); toast('♪ ' + d.replace('dance', '')); }
+  if (pad.pressed(B.RIGHT)) { const d = DANCES[G.danceIdx++ % DANCES.length]; char.playEmote(d, true); toast('♪ ' + (DANCE_NAME[d] || d)); }
   if (pad.pressed(B.TRIANGLE)) {
     const f = new THREE.Vector3(Math.sin(char.yaw), 0, Math.cos(char.yaw));
     // caixa de ~meia altura do avatar: dá para subir nela (e empilhar para alcançar lugares altos)
@@ -762,7 +806,8 @@ function updateShadows() {
   if (!G.placed) return;
   const { sun, char, world, blob } = G;
   const p = char.position, H = char.height;
-  sun.position.set(p.x + H * 1.2, p.y + H * 4, p.z + H * 0.8);
+  if (G.lightDir) sun.position.copy(p).addScaledVector(G.lightDir, H * 4.2);
+  else sun.position.set(p.x + H * 1.2, p.y + H * 4, p.z + H * 0.8);
   sun.target.position.copy(p);
   const cam = sun.shadow.camera, e = Math.max(0.3, H * 3);
   if (cam.right !== e) { cam.left = -e; cam.right = e; cam.top = e; cam.bottom = -e; cam.near = 0.01; cam.far = H * 10 + 1; cam.updateProjectionMatrix(); }
@@ -787,7 +832,8 @@ function updateHud() {
   if (G.placed) hud.context({ canGrab: !!G.char.reachable(world.props), holding: !!G.char.held });
   // com o PS4 conectado o joystick/botões da tela somem (voltam se ele desconectar)
   hud.touchVisible = !pad.connected;
-  if (G.phase === 'scan') hud.status('search', 'Escaneando o ambiente…');
+  if (G.trackLost) hud.status('warn', 'Rastreamento perdido — aponte para a mesa e mova devagar');
+  else if (G.phase === 'scan') hud.status('search', 'Escaneando o ambiente…');
   else if (!G.placed) {
     if (!G.reticleHit) hud.status('search', 'Procurando superfície…');
     else hud.status('ready', G.retStable ? 'Pronto — toque em Colocar aqui' : 'Segure firme um instante');

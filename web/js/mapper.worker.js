@@ -33,12 +33,12 @@ function fillPlanes() {
   for (const p of planes) {
     if (p.n < 10) continue;
     const y = p.y - 0.002, j = Math.floor(y / r);
+    // só a camada do plano (índice por altura): antes varria o mapa INTEIRO por plano, e o custo
+    // crescia com o tempo de sessão (CPU contínua = celular quente e bateria)
+    const L = map.layer(j);
+    if (!L) continue;
     const cells = [];
-    for (const [key, v] of map.cells) {
-      if (v < map.occ) continue;
-      unpackKey(key, t3);
-      if (t3[1] === j) cells.push(t3[0], t3[2]);
-    }
+    for (const key of L) { unpackKey(key, t3); cells.push(t3[0], t3[2]); }
     for (let c = 0; c < cells.length; c += 2) {
       const i = cells[c], k = cells[c + 1];
       for (const [di, dk] of [[1, 0], [0, 1]]) {
@@ -68,7 +68,7 @@ onmessage = (e) => {
   const m = e.data;
   if (m.t === 'init') {
     // occ 6 = 3 leituras confirmando o voxel (menos fantasmas); hit-test de plano conta igual
-    map = new VoxelMap({ res: m.res, hit: 2, miss: 1, occ: 6, max: 24, trackY: true });
+    map = new VoxelMap({ res: m.res, hit: 2, miss: 1, occ: 6, max: 24, trackY: true, layers: true, prune: true });
     return;
   }
   if (!map) return;
@@ -92,6 +92,8 @@ onmessage = (e) => {
         if ((i++ % 6) === 0) map.carve(ox, oy, oz, x, y, z, 100);
       }, { step: m.step || 2, maxDepth: 2.8, flipY: m.flipY });
       if (++frames % 4 === 0) fillPlanes();
+      // a cada ~10 s: esquece o ruído que não se confirmou nesse intervalo
+      if (frames % 72 === 0) map.prune();
     }
     reply(scores ? { scores } : {});
   }

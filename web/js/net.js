@@ -2,14 +2,14 @@
 import { encodeDepthFrame } from '/shared/protocol.js';
 
 export class Link {
-  constructor(role = 'phone') {
+  constructor(role = 'phone', { enabled = true } = {}) {
     this.role = role;
     this.ws = null;
     this.ok = false;
     this.server = {};
     this.sentFrames = 0;
     this.onMessage = null;
-    this.enabled = true;
+    this.enabled = enabled;
     this.retry = 2000;
     this._connect();
   }

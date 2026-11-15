@@ -122,7 +122,13 @@ export class Games {
   stop(silent = false) {
     const { world, scene, hud } = this.ctx;
     if (this.cur?.cleanup) this.cur.cleanup();
-    for (const m of this.objs) { scene.remove(m); m.traverse?.((o) => { o.geometry?.dispose?.(); }); }
+    for (const m of this.objs) {
+      scene.remove(m);
+      m.traverse?.((o) => {
+        o.geometry?.dispose?.();
+        for (const mt of [].concat(o.material || [])) mt.dispose?.();   // materiais também (vazava a cada partida)
+      });
+    }
     for (const b of this.bodies) {
       if (b.c) world.physics.removeCollider(b.c, false);
       if (b.prop && world.props.includes(b.prop)) world.removeProp(b.prop);

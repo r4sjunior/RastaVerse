@@ -55,7 +55,9 @@ O WebXR só abre em página HTTPS. Publicando na Vercel o app já sai em HTTPS:
    Com o PS4 pareado, os controles da tela somem e vale o controle.
 
 Na Vercel não há backend: o AR, a física e o avatar funcionam 100% no celular; só a nuvem de pontos no PC
-(viewer/gravação) precisa do `npm start` local, abaixo.
+(viewer/gravação) precisa do `npm start` local, abaixo. O app só tenta falar com o backend quando é aberto
+pelo IP da rede local (`192.168.x.x`, `10.x.x.x`, `localhost`…) ou com `?backend=1` no link — na Vercel ele
+não fica mais tentando conectar.
 
 ### No celular — com o backend local (nuvem de pontos no PC)
 
