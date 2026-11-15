@@ -103,3 +103,20 @@ test('protocolo carrega a flag de orientação', () => {
   assert.equal(decodeDepthFrame(encodeDepthFrame(f)).flipY, true);
   assert.equal(decodeDepthFrame(encodeDepthFrame({ ...f, flipY: false })).flipY, false);
 });
+
+test('filtro de pixels voadores descarta a borda entre objeto e fundo', () => {
+  // mesa a 1 m com uma "caixa" a 0,6 m no meio: os pixels da borda não podem virar pontos
+  const W = 40, H = 30, data = new Uint16Array(W * H).fill(1000);
+  for (let y = 10; y < 20; y++) for (let x = 15; x < 25; x++) data[y * W + x] = 600;
+  data[15 * W + 14] = 800;                  // pixel "misturado" na borda (voador)
+  const f = { width: W, height: H, data, rawValueToMeters: 0.001,
+    worldFromView: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], projection: perspective(1, W / H, 0.05, 20),
+    normDepthFromNormView: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] };
+  const zs = [];
+  unprojectDepth(f, (x, y, z) => zs.push(-z), { step: 1, maxDepth: 5 });
+  assert.ok(!zs.some((z) => z > 0.7 && z < 0.9), 'nenhum ponto voador a 0,8 m');
+  assert.ok(zs.some((z) => Math.abs(z - 0.6) < 0.01) && zs.some((z) => Math.abs(z - 1) < 0.01), 'caixa e mesa continuam');
+  let semFiltro = 0;
+  unprojectDepth(f, (x, y, z) => { if (-z > 0.7 && -z < 0.9) semFiltro++; }, { step: 1, maxDepth: 5, edge: 0 });
+  assert.equal(semFiltro, 1);
+});

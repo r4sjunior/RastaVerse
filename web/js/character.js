@@ -1,10 +1,18 @@
 // Personagem: cápsula cinemática do Rapier (KinematicCharacterController) + máquina de estados
 // de animação do avatar voxel. Tudo em metros e gravidade real; as velocidades são proporcionais
 // à altura do avatar (um boneco de 25 cm anda ~20 cm/s, como uma pessoa de 1,75 m anda ~1,4 m/s).
+//
+// Interações:
+//  - pegar / carregar / soltar / arremessar bolas e caixas (física real ao soltar);
+//  - subir sozinho em degraus baixos e escalar bordas altas ("mantle"): pule de frente para a borda
+//    — dá para empilhar caixas e subir nelas para chegar em lugares mais altos.
 import * as THREE from 'three';
 import { G } from './world.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const _want = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+const _q = new THREE.Quaternion();
 
 export class Character {
   constructor(world, avatar, scene) {
@@ -20,6 +28,9 @@ export class Character {
     this.emote = null;           // animação "por cima" (aceno, dança) até mexer o analógico
     this.state = 'idle';
     this.onLand = null;
+    this.held = null;            // objeto carregado
+    this.mantle = null;          // escalada em andamento
+    this.pushT = 0;              // tempo empurrando um obstáculo (para subir degrau)
     this.body = null; this.collider = null;
     this.kcc = world.physics.createCharacterController(0.002);
     this.kcc.setUp({ x: 0, y: 1, z: 0 });
@@ -46,14 +57,15 @@ export class Character {
     this.kcc.setCharacterMass(70 * (H / 1.75) ** 3);
     this.kcc.setOffset(Math.max(0.001, 0.01 * H));
     this.vel.set(0, 0, 0);
+    this.mantle = null;
     this.lastSafe.copy(p);
     this.position.copy(p);
   }
 
   _embedded(x, y, z) {
     const R = this.R;
-    // sonda pequena só na altura dos pés (2 a 6 cm num avatar de 25 cm): pega "chão ruidoso" que surgiu
-    // por cima dos pés, mas não paredes/objetos ao lado (a cápsula real nunca deixa encostar neles por dentro)
+    // sonda pequena só na altura dos pés: pega "chão ruidoso" que surgiu por cima dos pés,
+    // mas não paredes/objetos ao lado (a cápsula real nunca deixa encostar neles por dentro)
     if (!this._probe || this._probeH !== this.height) {
       this._probe = new R.Ball(this.radius * 0.5);
       this._probeH = this.height;
@@ -89,6 +101,121 @@ export class Character {
     });
   }
 
+  // ------------------------------------------------------------------ pegar / soltar / arremessar
+  /** objeto mais perto ao alcance das mãos (ou null) */
+  reachable(props) {
+    if (!this.body || this.held) return null;
+    const H = this.height, p = this.position;
+    _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    const hx = p.x + _fwd.x * H * 0.3, hy = p.y + H * 0.35, hz = p.z + _fwd.z * H * 0.3;
+    let best = null, bd = Infinity;
+    for (const pr of props) {
+      const t = pr.body.translation();
+      const d = Math.hypot(t.x - hx, (t.y - hy) * 0.7, t.z - hz) - pr.size * 0.5;
+      if (d < H * 0.45 && d < bd) { bd = d; best = pr; }
+    }
+    return best;
+  }
+
+  grab(prop) {
+    if (!prop || this.held) return false;
+    const R = this.R;
+    prop.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
+    for (let i = 0; i < prop.body.numColliders(); i++) prop.body.collider(i).setSensor(true); // não empurra o próprio avatar
+    this.held = prop;
+    this.avatar.carry = true;
+    this.emote = null;
+    this.avatar.play('pickUp', { loop: false, fade: 0.08, restart: true, speed: 1.6 });
+    this.pickLock = 0.3;
+    return true;
+  }
+
+  /** solta (throw=false) ou arremessa (throw=true) o que está nas mãos */
+  release(throwIt = false, vel = null) {
+    const pr = this.held;
+    if (!pr) return null;
+    const R = this.R, H = this.height;
+    for (let i = 0; i < pr.body.numColliders(); i++) pr.body.collider(i).setSensor(false);
+    pr.body.setBodyType(R.RigidBodyType.Dynamic, true);
+    _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    const k = Math.sqrt(H);
+    if (vel) pr.body.setLinvel(vel, true);
+    else if (throwIt) pr.body.setLinvel({ x: this.vel.x + _fwd.x * 3.2 * k, y: 2.2 * k, z: this.vel.z + _fwd.z * 3.2 * k }, true);
+    else pr.body.setLinvel({ x: this.vel.x + _fwd.x * 0.4 * k, y: 0, z: this.vel.z + _fwd.z * 0.4 * k }, true);
+    this.held = null;
+    this.avatar.carry = false;
+    return pr;
+  }
+
+  _carry() {
+    const pr = this.held;
+    if (!pr) return;
+    const H = this.height, p = this.position;
+    _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    const ahead = this.radius + pr.size * 0.55 + H * 0.04;
+    pr.body.setNextKinematicTranslation({ x: p.x + _fwd.x * ahead, y: p.y + H * 0.56, z: p.z + _fwd.z * ahead });
+    _q.setFromAxisAngle(UP, this.yaw);
+    pr.body.setNextKinematicRotation({ x: _q.x, y: _q.y, z: _q.z, w: _q.w });
+  }
+
+  // ------------------------------------------------------------------ escalar bordas
+  /** altura do topo de uma borda logo à frente (ou null). maxRise relativo aos pés. */
+  ledgeAhead(maxRise) {
+    // procura a borda em 3 distâncias à frente (o avatar pode parar a alguns cm do obstáculo)
+    for (const k of [0.1, 0.22, 0.36]) {
+      const l = this._ledgeAt(maxRise, this.radius + this.height * k);
+      if (l) return l;
+    }
+    return null;
+  }
+
+  _ledgeAt(maxRise, d) {
+    const H = this.height, p = this.position;
+    _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    const ox = p.x + _fwd.x * d, oz = p.z + _fwd.z * d, oy = p.y + maxRise + H * 0.05;
+    const exclude = this.held ? this.held.body : undefined;
+    const ray = this._ray || (this._ray = new this.R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }));
+    ray.origin.x = ox; ray.origin.y = oy; ray.origin.z = oz;
+    const hit = this.world.physics.castRay(ray, maxRise + H * 0.05 - H * 0.12, true, undefined, undefined, this.collider, exclude);
+    if (!hit || hit.timeOfImpact < 1e-4) return null;        // nada à frente, ou alto demais (raio nasceu dentro)
+    const top = oy - hit.timeOfImpact;
+    const rise = top - p.y;
+    if (rise < H * 0.16 || rise > maxRise) return null;
+    // espaço livre em cima para o corpo
+    const R = this.R;
+    let blocked = false;
+    const shape = this._headShape || (this._headShape = new R.Ball(this.radius * 0.8));
+    if (this._headShapeH !== H) { this._headShape = new R.Ball(this.radius * 0.8); this._headShapeH = H; }
+    this.world.physics.intersectionsWithShape({ x: ox, y: top + H * 0.5, z: oz }, { x: 0, y: 0, z: 0, w: 1 }, this._headShape,
+      (c) => { if (c.isSensor()) return true; blocked = true; return false; }, undefined, undefined, this.collider, exclude);
+    return blocked ? null : { x: ox + _fwd.x * H * 0.06, y: top, z: oz + _fwd.z * H * 0.06, rise };
+  }
+
+  _startMantle(l) {
+    const H = this.height, p = this.position;
+    const tall = l.rise > H * 0.4;
+    this.mantle = { t: 0, dur: (tall ? 0.55 : 0.28) * Math.sqrt(H / 0.25), from: p.clone(), to: new THREE.Vector3(l.x, l.y + 0.004, l.z), tall };
+    this.vel.set(0, 0, 0);
+    this.emote = null;
+    if (tall) this.avatar.play('mantle', { loop: false, fade: 0.06, restart: true, speed: this.avatar.duration('mantle') / this.mantle.dur });
+    this.onMantle?.(tall);
+  }
+
+  _updateMantle(dt) {
+    const m = this.mantle, H = this.height;
+    m.t += dt;
+    const k = Math.min(1, m.t / m.dur);
+    // primeiro sobe (até o topo), depois avança por cima da borda
+    const ku = Math.min(1, k / 0.6), kf = Math.max(0, (k - 0.35) / 0.65);
+    const ease = (x) => x * x * (3 - 2 * x);
+    const y = m.from.y + (m.to.y - m.from.y) * ease(ku);
+    const x = m.from.x + (m.to.x - m.from.x) * ease(kf);
+    const z = m.from.z + (m.to.z - m.from.z) * ease(kf);
+    this.body.setNextKinematicTranslation({ x, y: y + H / 2 + 0.002, z });
+    this.position.set(x, y, z);
+    if (k >= 1) { this.mantle = null; this.grounded = true; this.airTime = 0; this.lastSafe.copy(this.position); }
+  }
+
   /**
    * @param {number} dt
    * @param {{move:THREE.Vector3, mag:number, sprint:number, walk:boolean, jump:boolean}} input  move = direção no mundo (y=0)
@@ -96,7 +223,17 @@ export class Character {
   update(dt, input) {
     if (!this.body) return;
     const H = this.height;
-    const walkV = 0.8 * H, runV = 1.9 * H, sprintV = 3.1 * H;
+    if (this.mantle) {
+      const tall = this.mantle.tall;
+      this._updateMantle(dt);           // pode terminar a escalada (this.mantle vira null)
+      this._carry();
+      this.avatar.root.quaternion.setFromAxisAngle(UP, this.yaw);
+      if (!tall) this._animate(dt, 0.5);
+      this.avatar.update(dt);
+      return;
+    }
+    const carryK = this.held ? 0.8 : 1;
+    const walkV = 0.8 * H * carryK, runV = 1.9 * H * carryK, sprintV = 3.1 * H * carryK;
     let target = 0;
     if (input.mag > 0) {
       target = input.walk ? walkV * input.mag : (input.mag < 0.55 ? walkV * input.mag / 0.55 : runV * input.mag);
@@ -104,15 +241,22 @@ export class Character {
       this.emote = this.emote && this.emote.startsWith('dance') && input.mag < 0.2 ? this.emote : null;
     }
     // aceleração horizontal (menos controle no ar)
-    const want = input.move.clone().setY(0);
-    if (want.lengthSq() > 0) want.normalize().multiplyScalar(target);
+    _want.copy(input.move).setY(0);
+    if (_want.lengthSq() > 0) _want.normalize().multiplyScalar(target);
     const acc = (this.grounded ? 10 : 2.5) * dt;
-    this.vel.x += (want.x - this.vel.x) * Math.min(1, acc);
-    this.vel.z += (want.z - this.vel.z) * Math.min(1, acc);
+    this.vel.x += (_want.x - this.vel.x) * Math.min(1, acc);
+    this.vel.z += (_want.z - this.vel.z) * Math.min(1, acc);
 
     // pulo e gravidade de verdade — com buffer (guarda o toque 0,15 s) e coyote time (0,12 s após perder o chão)
     if (input.jump) this.jumpBuffer = 0.15; else this.jumpBuffer = Math.max(0, (this.jumpBuffer || 0) - dt);
     this.coyote = this.grounded ? 0.12 : Math.max(0, (this.coyote || 0) - dt);
+
+    // escalar: pulo de frente para uma borda alta (até ~1x a altura) ou no ar perto de uma borda
+    const pushing = input.mag > 0.35;
+    if (pushing && (this.jumpBuffer > 0 || (!this.grounded && this.airTime > 0.05))) {
+      const l = this.ledgeAhead(this.grounded ? H * 1.0 : Math.max(H * 0.2, H * 0.65));
+      if (l) { this.jumpBuffer = 0; this._startMantle(l); this.avatar.update(dt); return; }
+    }
     if (this.jumpBuffer > 0 && this.coyote > 0) {
       this.jumpBuffer = 0; this.coyote = 0;
       const hJump = 0.55 * H;
@@ -122,13 +266,14 @@ export class Character {
     }
     this.vel.y -= G * dt;
     const desired = { x: this.vel.x * dt, y: this.vel.y * dt, z: this.vel.z * dt };
-    this.kcc.computeColliderMovement(this.collider, desired);
+    this.kcc.computeColliderMovement(this.collider, desired, undefined, undefined, (c) => !c.isSensor());
     const mv = this.kcc.computedMovement();
     const wasGrounded = this.grounded;
     this.grounded = this.kcc.computedGrounded();
     const t = this.body.translation();
     const nx = t.x + mv.x, ny = t.y + mv.y, nz = t.z + mv.z;
     this.body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
+    const wantH = Math.hypot(desired.x, desired.z), gotH = Math.hypot(mv.x, mv.z);
     if (dt > 0) {
       // velocidade real (após colisões)
       const realY = mv.y / dt;
@@ -138,8 +283,17 @@ export class Character {
     }
     this.position.set(nx, ny - H / 2 - 0.002, nz);
 
-    // destravar SÓ se a cápsula estiver enterrada na geometria (voxel ruidoso surgiu dentro dela).
-    // Encostar numa parede/caixa não conta: a cápsula de teste é menor que a real.
+    // subir sozinho num degrau baixo (até ~meia altura) quando empurra contra ele
+    // (acumula enquanto bloqueado e decai devagar: deslizar de lado na quina não zera)
+    if (this.grounded && pushing && wantH > 1e-5 && gotH < wantH * 0.5) this.pushT += dt;
+    else this.pushT = Math.max(0, this.pushT - dt * 0.5);
+    if (this.pushT > 0.15) {
+      this.pushT = 0;
+      const l = this.ledgeAhead(H * 0.5);
+      if (l) this._startMantle(l);
+    }
+
+    // destravar SÓ se a cápsula estiver enterrada na geometria (voxel ruidoso surgiu dentro dela)
     if ((this.checkT = (this.checkT || 0) + dt) > 0.25) {
       this.checkT = 0;
       if (this._embedded(nx, ny, nz)) {
@@ -160,23 +314,30 @@ export class Character {
 
     // virar para onde anda
     const hs = Math.hypot(this.vel.x, this.vel.z);
-    if (hs > 0.15 * H && input.mag > 0) {
-      const ty = Math.atan2(this.vel.x, this.vel.z);
+    if (input.mag > 0.15) {
+      const ty = Math.atan2(input.move.x, input.move.z);
       let d = ty - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
       this.yaw += d * Math.min(1, 12 * dt);
     }
     this.avatar.root.quaternion.setFromAxisAngle(UP, this.yaw);
+    this._carry();
 
     // caiu da mesa e sumiu no vazio (chão não mapeado): volta para o último lugar seguro
     const floorY = Number.isFinite(this.world.minY) ? this.world.minY - 2.5 : this.lastSafe.y - 3;
-    if (this.position.y < floorY) { this.spawn(this.lastSafe.clone().add(new THREE.Vector3(0, 0.05, 0))); this.onRespawn?.(); }
+    if (this.position.y < floorY) {
+      if (this.held) this.release(false);
+      this.spawn(this.lastSafe.clone().add(new THREE.Vector3(0, 0.05, 0)));
+      this.onRespawn?.();
+    }
 
+    if (this.pickLock > 0) this.pickLock -= dt;
     this._animate(dt, hs / H);
     this.avatar.update(dt);
   }
 
   _animate(dt, rel) {
     const a = this.avatar;
+    if (this.pickLock > 0) return;
     if (this.landLock > 0) { this.landLock -= dt; if (rel < 0.2) return; }
     if (!this.grounded && this.airTime > 0.08) {
       this.emote = null;

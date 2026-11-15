@@ -1,20 +1,29 @@
-// HUD do app (AR e simulador): status, joystick flutuante, botões de ação, menu e seta para o avatar.
-// Tudo alimenta o mesmo Pad do controle PS4 (botões virtuais), então toque e PS4 funcionam juntos.
+// HUD do app (AR e simulador): status, escaneamento, joystick flutuante, botões de ação, menu,
+// minigames (placar, contagem, resultado) e seta para o avatar fora da tela.
+// Tudo alimenta o mesmo Pad do controle PS4 (botões virtuais): toque e PS4 funcionam juntos.
 import { B } from './gamepad.js';
 
 const ICON = {
   jump: '<svg viewBox="0 0 24 24"><path d="M12 4l7 8h-4v8H9v-8H5z"/></svg>',
   ball: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M5 9c4 1 10 1 14 0M5 15c4-1 10-1 14 0" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".55"/></svg>',
   box: '<svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".5"/></svg>',
-  hi: '<svg viewBox="0 0 24 24"><path d="M8 11V5.5a1.5 1.5 0 013 0V10m0-.5V4a1.5 1.5 0 013 0v6m0-1V5.5a1.5 1.5 0 013 0V14a7 7 0 01-12.5 4.3L3.3 14a1.6 1.6 0 012.5-2L8 14z"/></svg>',
+  hand: '<svg viewBox="0 0 24 24"><path d="M8 11V5.5a1.5 1.5 0 013 0V10m0-.5V4a1.5 1.5 0 013 0v6m0-1V5.5a1.5 1.5 0 013 0V14a7 7 0 01-12.5 4.3L3.3 14a1.6 1.6 0 012.5-2L8 14z"/></svg>',
   target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg>',
   menu: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   arrow: '<svg viewBox="0 0 24 24"><path d="M12 3l8 14H4z"/></svg>',
 };
 
+export const GAMES = [
+  { id: 'coins', name: 'Caça às Moedas', desc: 'Pegue as 8 moedas — algumas estão no alto' },
+  { id: 'race', name: 'Corrida dos Anéis', desc: 'Atravesse os 5 portais na ordem' },
+  { id: 'hoops', name: 'Basquete Rasta', desc: 'Pegue a bola e acerte a cesta' },
+  { id: 'bowling', name: 'Boliche', desc: 'Derrube os pinos com 2 bolas' },
+  { id: 'tower', name: 'Torre da Estrela', desc: 'Empilhe caixas e alcance a estrela' },
+];
+
 export class Hud {
-  constructor(root, pad, { onExit } = {}) {
+  constructor(root, pad, { onExit, onGame, onAction } = {}) {
     this.pad = pad;
     this.root = root;
     root.innerHTML = `
@@ -27,8 +36,17 @@ export class Hud {
         </div>
       </div>
       <div class="h-diag" hidden></div>
+      <div class="h-game" hidden><b data-g-title></b><span data-g-score></span><span data-g-time></span><button data-g-stop aria-label="Encerrar minigame">✕</button></div>
       <div class="h-hint"></div>
       <div class="h-toast"></div>
+      <div class="h-count" hidden></div>
+
+      <div class="h-scan" hidden>
+        <p class="h-scan-t">Escaneando o ambiente</p>
+        <p class="h-scan-s" data-scan-text>Mova o celular devagar mostrando a mesa e o chão</p>
+        <div class="h-bar"><i data-scan-bar></i></div>
+        <div class="h-scan-row"><button class="h-scan-skip" data-scan-skip>Pular</button><button class="h-scan-done" data-scan-done disabled>Pronto</button></div>
+      </div>
 
       <div class="h-place"><button class="h-place-btn" data-b="${B.CROSS}">Colocar aqui</button></div>
 
@@ -36,29 +54,43 @@ export class Hud {
 
       <div class="h-actions" data-placed>
         <button class="h-act a-jump" data-b="${B.CROSS}" aria-label="Pular">${ICON.jump}<b>Pular</b></button>
-        <button class="h-act a-ball" data-b="${B.CIRCLE}" aria-label="Bola">${ICON.ball}<b>Bola</b></button>
+        <button class="h-act a-ball" data-b="${B.CIRCLE}" aria-label="Bola">${ICON.ball}<b data-lbl-ball>Bola</b></button>
         <button class="h-act a-box" data-b="${B.TRIANGLE}" aria-label="Caixa">${ICON.box}<b>Caixa</b></button>
-        <button class="h-act a-hi" data-b="${B.SQUARE}" aria-label="Acenar">${ICON.hi}<b>Oi</b></button>
+        <button class="h-act a-grab" data-b="${B.SQUARE}" aria-label="Pegar">${ICON.hand}<b data-lbl-grab>Pegar</b></button>
       </div>
 
       <div class="h-arrow" hidden>${ICON.arrow}</div>
 
+      <div class="h-result" hidden>
+        <div class="h-result-in">
+          <p class="h-r-k" data-r-kicker>Fim de jogo</p>
+          <h3 data-r-title></h3>
+          <p class="h-r-big" data-r-big></p>
+          <p class="h-r-sub" data-r-sub></p>
+          <div class="h-r-row"><button data-r-exit>Sair</button><button class="pri" data-r-again>Jogar de novo</button></div>
+        </div>
+      </div>
+
       <div class="h-sheet" hidden>
         <div class="h-sheet-in">
           <div class="h-grab"></div>
+          <p class="h-sec">Minigames</p>
+          <div class="h-games">${GAMES.map((g, i) => `<button data-game="${g.id}"><b>${i + 1}. ${g.name}</b><small>${g.desc}</small><em data-best="${g.id}"></em></button>`).join('')}</div>
           <p class="h-sec">Emotes</p>
           <div class="h-row">
+            <button data-act="hi" data-close>Acenar</button>
             <button data-b="${B.RIGHT}" data-close>Dançar</button>
             <button data-b="${B.UP}" data-close>Comemorar</button>
-            <button data-b="${B.LEFT}" data-close>Palmas</button>
             <button data-b="${B.DOWN}" data-close>Sentar</button>
           </div>
           <p class="h-sec">Tamanho do avatar</p>
           <div class="h-size"><button data-b="${B.L1}" aria-label="Diminuir">−</button><span data-size>25 cm</span><button data-b="${B.R1}" aria-label="Aumentar">+</button></div>
           <p class="h-sec">Mundo</p>
           <div class="h-row">
+            <button data-act="scan" data-close>Escanear</button>
             <button data-b="${B.OPTIONS}" data-tg="malha">Ver malha</button>
             <button data-b="${B.L3}" data-tg="oclusao">Oclusão</button>
+            <button data-act="mute" data-tg="som">Som</button>
             <button data-b="${B.TOUCHPAD}" data-close>Apagar mapa</button>
             <button data-b="${B.SHARE}" data-tg="rec">Gravar</button>
           </div>
@@ -81,10 +113,21 @@ export class Hud {
       };
       btn.addEventListener('pointerup', up); btn.addEventListener('pointercancel', up); btn.addEventListener('lostpointercapture', up);
     }
+    for (const btn of root.querySelectorAll('button[data-act]')) {
+      btn.addEventListener('click', () => { buzz(8); onAction?.(btn.dataset.act); if (btn.hasAttribute('data-close')) this.menu(false); });
+    }
+    for (const btn of root.querySelectorAll('button[data-game]')) {
+      btn.addEventListener('click', () => { buzz(10); this.menu(false); onGame?.(btn.dataset.game); });
+    }
     q('[data-menu]').addEventListener('click', () => this.menu(q('.h-sheet').hidden));
     q('.h-sheet').addEventListener('pointerdown', (e) => { if (e.target.classList.contains('h-sheet')) this.menu(false); });
     q('[data-exit]').addEventListener('click', () => onExit?.());
     q('[data-diag]').addEventListener('click', () => { const d = q('.h-diag'); d.hidden = !d.hidden; });
+    q('[data-g-stop]').addEventListener('click', () => onAction?.('stopGame'));
+    q('[data-scan-done]').addEventListener('click', () => onAction?.('scanDone'));
+    q('[data-scan-skip]').addEventListener('click', () => onAction?.('scanDone'));
+    q('[data-r-again]').addEventListener('click', () => { this.result(null); onAction?.('again'); });
+    q('[data-r-exit]').addEventListener('click', () => { this.result(null); onAction?.('stopGame'); });
 
     // ---------------- joystick flutuante: nasce onde o polegar encosta (metade esquerda)
     const zone = q('.h-joyzone'), joy = q('.h-joy'), knob = q('.h-knob');
@@ -120,10 +163,14 @@ export class Hud {
 
     this.el = {
       status: q('.h-status'), statusText: q('.h-status span'), diag: q('.h-diag'), hint: q('.h-hint'),
-      toast: q('.h-toast'), sheet: q('.h-sheet'), size: q('[data-size]'), arrow: q('.h-arrow'),
-      toggles: { malha: q('[data-tg="malha"]'), oclusao: q('[data-tg="oclusao"]'), rec: q('[data-tg="rec"]') },
+      toast: q('.h-toast'), sheet: q('.h-sheet'), size: q('[data-size]'), arrow: q('.h-arrow'), count: q('.h-count'),
+      game: q('.h-game'), gTitle: q('[data-g-title]'), gScore: q('[data-g-score]'), gTime: q('[data-g-time]'),
+      scan: q('.h-scan'), scanText: q('[data-scan-text]'), scanBar: q('[data-scan-bar]'), scanDone: q('[data-scan-done]'),
+      res: q('.h-result'), rKicker: q('[data-r-kicker]'), rTitle: q('[data-r-title]'), rBig: q('[data-r-big]'), rSub: q('[data-r-sub]'),
+      grab: q('.a-grab'), lblGrab: q('[data-lbl-grab]'), lblBall: q('[data-lbl-ball]'),
+      toggles: { malha: q('[data-tg="malha"]'), oclusao: q('[data-tg="oclusao"]'), rec: q('[data-tg="rec"]'), som: q('[data-tg="som"]') },
     };
-    this.toastT = 0;
+    this.toastT = 0; this.countT = 0;
     pad.extra = this;
     root.classList.add('pre');
   }
@@ -150,6 +197,52 @@ export class Hud {
   toast(msg) { const t = this.el.toast; t.textContent = msg; t.classList.add('show'); this.toastT = 1.8; }
   size(text) { this.el.size.textContent = text; }
   toggles(o) { for (const k in o) this.el.toggles[k]?.classList.toggle('active', !!o[k]); }
+  best(id, text) { const e = this.root.querySelector(`[data-best="${id}"]`); if (e) e.textContent = text ? 'Recorde: ' + text : ''; }
+
+  /** botões contextuais: pegar/soltar e bola/jogar */
+  context({ canGrab, holding }) {
+    const k = `${canGrab}|${holding}`;
+    if (this._ctx === k) return;
+    this._ctx = k;
+    this.el.lblGrab.textContent = holding ? 'Soltar' : 'Pegar';
+    this.el.lblBall.textContent = holding ? 'Jogar' : 'Bola';
+    this.el.grab.classList.toggle('glow', !!canGrab && !holding);
+  }
+
+  // ---------------- escaneamento
+  scan(on, progress = 0, text = '') {
+    this.el.scan.hidden = !on;
+    this.root.classList.toggle('scanning', on);
+    if (!on) return;
+    this.el.scanBar.style.width = `${Math.round(Math.min(1, progress) * 100)}%`;
+    if (text) this.el.scanText.textContent = text;
+    this.el.scanDone.disabled = progress < 0.35;
+    this.el.scanDone.classList.toggle('ready', progress >= 1);
+  }
+
+  // ---------------- minigames
+  game(info) {
+    if (!info) { this.el.game.hidden = true; return; }
+    this.el.game.hidden = false;
+    this.el.gTitle.textContent = info.title;
+    this.el.gScore.textContent = info.score ?? '';
+    this.el.gTime.textContent = info.time ?? '';
+    this.el.gTime.classList.toggle('low', !!info.low);
+  }
+  count(text) {
+    const c = this.el.count;
+    if (!text) { c.hidden = true; return; }
+    c.hidden = false; c.textContent = text;
+    c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
+  }
+  result(r) {
+    if (!r) { this.el.res.hidden = true; return; }
+    this.el.res.hidden = false;
+    this.el.rKicker.textContent = r.kicker || 'Fim de jogo';
+    this.el.rTitle.textContent = r.title;
+    this.el.rBig.textContent = r.big;
+    this.el.rSub.textContent = r.sub || '';
+  }
 
   /** seta na borda da tela apontando para o avatar fora de vista (ndc = projeção; null esconde) */
   arrow(ndc) {
@@ -159,7 +252,7 @@ export class Hud {
     if (ndc.z > 1) { x = -x; y = -y; }       // atrás da câmera
     const ang = Math.atan2(-y, x);
     const k = 1 / Math.max(Math.abs(x), Math.abs(y), 1e-3);
-    const ex = THREE_clamp(x * k, -0.86, 0.86), ey = THREE_clamp(y * k, -0.8, 0.8);
+    const ex = clamp(x * k, -0.86, 0.86), ey = clamp(y * k, -0.8, 0.8);
     a.hidden = false;
     a.style.left = `${(ex + 1) * 50}%`; a.style.top = `${(1 - ey) * 50}%`;
     a.style.transform = `translate(-50%, -50%) rotate(${ang + Math.PI / 2}rad)`;
@@ -170,5 +263,5 @@ export class Hud {
   }
 }
 
-function THREE_clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function buzz(ms) { try { navigator.vibrate?.(ms); } catch { /* sem vibração */ } }

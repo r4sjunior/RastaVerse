@@ -69,6 +69,10 @@ function sampleTrack(keys, f, loopLen) {
 
 const _e = new THREE.Euler();
 const _q = new THREE.Quaternion();
+// pose de carregar (espaço local do braço): gira o braço da lateral (T) para a frente, um pouco para baixo
+const CARRY_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0.3, 'YXZ'));
+const CARRY_R = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, -0.3, 'YXZ'));
+const CARRY_F = new THREE.Quaternion();
 
 export class VoxelAvatar {
   constructor(data, opts = {}) {
@@ -116,6 +120,7 @@ export class VoxelAvatar {
     this.time = 0; this.prevTime = 0; this.fade = 1; this.fadeDur = 0.2;
     this.speed = 1;
     this.onFinish = null;
+    this.carry = false; this._carryW = 0;
     // altura em voxels na T-pose (para escalar em metros)
     this.play('tpose', { fade: 0 });
     this.update(0);
@@ -210,6 +215,16 @@ export class VoxelAvatar {
       bone.quaternion.copy(a.q);
       bone.scale.setScalar(a.s || 1);
     });
+    // carregando algo: braços esticados para a frente (sobrepõe só os braços; pernas seguem a animação)
+    this._carryW += ((this.carry ? 1 : 0) - this._carryW) * Math.min(1, dt * 10);
+    if (this._carryW > 0.01) {
+      const b = this._arms ||= ['Left_Arm', 'Right_Arm', 'Left_Forearm', 'Right_Forearm'].map((n) => this.bones.find((x) => x.name === n));
+      if (b[0] && b[1]) {
+        b[0].quaternion.slerp(CARRY_L, this._carryW); b[1].quaternion.slerp(CARRY_R, this._carryW);
+        if (b[2]) b[2].quaternion.slerp(CARRY_F, this._carryW);
+        if (b[3]) b[3].quaternion.slerp(CARRY_F, this._carryW);
+      }
+    }
   }
 }
 

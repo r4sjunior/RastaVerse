@@ -26,6 +26,8 @@ export class World {
     this.keys = [];                  // índice -> key
     this.pendingAdd = new Map();     // key -> topo da superfície
     this.pendingRemove = new Set();
+    this.tops = new Map();           // key -> altura do topo (superfície medida)
+    this.occupied = 0;
     this.capacity = capacity;
     this.minY = Infinity;            // voxel mais baixo conhecido (chão provável)
     this.points = 0;
@@ -102,6 +104,7 @@ export class World {
     for (let i = 0; i < r.length; i++) { const k = r[i]; this.pendingAdd.delete(k); this.pendingRemove.add(k); }
     for (let i = 0; i < a.length; i += 2) { const k = a[i]; this.pendingRemove.delete(k); this.pendingAdd.set(k, a[i + 1]); }
     if (m.scores) this.onScores?.(m.scores);
+    if (m.occupied !== undefined) this.occupied = m.occupied;
   }
 
   /** aplica as mudanças do mapa nos colisores e malhas (com orçamento por quadro: sem picos) */
@@ -131,6 +134,7 @@ export class World {
       this.R.ColliderDesc.cuboid(r * 0.75, hy, r * 0.75).setTranslation(x, y, z).setFriction(0.9).setRestitution(0.1),
     );
     this.colliders.set(key, col);
+    this.tops.set(key, top);
     const idx = this.keys.length;
     this.keys.push(key); this.slot.set(key, idx);
     this._m.makeScale(1, (2 * hy) / r, 1).setPosition(x, y, z);
@@ -146,7 +150,7 @@ export class World {
     if (idx === undefined) return;
     const col = this.colliders.get(key);
     if (col) this.physics.removeCollider(col, false);
-    this.colliders.delete(key); this.slot.delete(key);
+    this.colliders.delete(key); this.slot.delete(key); this.tops.delete(key);
     const last = this.keys.length - 1;
     if (idx !== last) {
       const lk = this.keys[last];

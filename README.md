@@ -48,7 +48,7 @@ O WebXR só abre em página HTTPS. Publicando na Vercel o app já sai em HTTPS:
    - **Pular** (botão grande), **Bola**, **Caixa**, **Oi** no canto direito;
    - topo: **alvo** (traz o avatar para onde a câmera mira), **⋯** menu (emotes, tamanho, malha, oclusão, gravar), **✕** sair.
    Se o avatar sair da tela, uma **seta** na borda aponta para ele.
-   O app entra no mundo **na horizontal** (opção "Tela no mundo" nas configurações para seguir o giro do celular)
+   Funciona **em pé ou deitado** (segue o giro do celular; dá para travar na horizontal em Ajustes)
    e o layout se adapta a retrato, paisagem e tablet.
    A **oclusão** (avatar escondido atrás de objetos reais) vem **desligada**: o depth do celular tem ruído que fazia
    o avatar sumir. Ligue no menu ⋯ › Oclusão quando o mapa estiver limpo (aí ele aparece como silhueta atrás das coisas).
@@ -112,7 +112,7 @@ animações, edite o dicionário `ANIMS`. Paleta é BGR; o espaço é mão-esque
 server/server.js      backend: estáticos, WebSocket, fusão de voxels, gravação, PLY
 shared/               código comum celular+servidor: depth.js (desprojeção), voxelmap.js, protocol.js, mat4.js
 web/index.html        app AR/simulador · js/app.js (loop), world.js (Rapier + colisores), mapper.worker.js (depth → voxels), character.js,
-                      avatar.js, gamepad.js, hud.js (HUD, joystick, menu), net.js, sim.js · viewer.html + js/viewer.js
+                      avatar.js, gamepad.js, hud.js (HUD, joystick, menu), games.js (minigames), sfx.js (sons), net.js, sim.js · viewer.html + js/viewer.js
 tools/                vox2json.py, reconstruct_open3d.py, make-cert.mjs, build.mjs (gera dist/ para a Vercel)
 test/                 npm test — matemática do depth (inclui buffer girado de celular em retrato), protocolo, mapa
 ```
@@ -127,6 +127,21 @@ O depth do ARCore em mesas lisas tem vários cm de ruído. Para o avatar não af
 - a oclusão desce 2 cm, então o ruído da superfície não esconde os pés.
 
 No simulador dá para reproduzir: `?sim=1&noise=0.04` (4% de ruído).
+
+## Interação, escalada e minigames
+
+- **Pegar** (□ no PS4): pega a bola/caixa ao alcance (o botão brilha), carrega com os braços à frente;
+  **Soltar** (□) ou **Jogar** (○) com física real. Nos minigames o arremesso tem **mira assistida**.
+- **Caixa** (△) tem meia altura do avatar: dá para **subir** nela e empilhar.
+- **Escalada**: degraus até ~½ altura ele sobe sozinho ao empurrar; bordas até ~1 altura, pule de frente
+  para elas (animação "Mantle" do VoxEdit).
+- **Escaneamento guiado** ao entrar (barra de cobertura, "Superfície ✓ · Chão ✓"); refazer em ⋯ › Escanear.
+- **Minigames** (⋯ › Minigames), com contagem, placar, sons e recorde salvo no aparelho:
+  1. Caça às Moedas · 2. Corrida dos Anéis · 3. Basquete Rasta · 4. Boliche · 5. Torre da Estrela.
+  Tudo é posicionado nas superfícies que a câmera mapeou e dimensionado pela altura do avatar.
+
+Captação do ambiente: filtro de "pixels voadores" nas bordas dos objetos, 3 leituras para confirmar um voxel e
+preenchimento de buracos dentro de planos (sombra atrás de objetos), sem fechar as bordas reais da mesa.
 
 ## Desempenho
 

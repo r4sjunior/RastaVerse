@@ -17,6 +17,9 @@ import { invert, transform4 } from './mat4.js';
 export function unprojectDepth(f, emit, opt = {}) {
   const step = opt.step || 2, minD = opt.minDepth ?? 0.15, maxD = opt.maxDepth ?? 4.0;
   const flipY = opt.flipY ?? !!f.flipY;
+  // "pixels voadores": na borda entre um objeto e o fundo o sensor mistura as duas distâncias e cria
+  // pontos no ar (fantasmas). Descarta o pixel se ele difere mais que `edge` (fração) de um vizinho.
+  const edge = opt.edge ?? 0.08;
   const viewFromDepth = invert(f.normDepthFromNormView) || f.normDepthFromNormView;
   const invProj = invert(f.projection);
   const W = f.worldFromView;
@@ -27,8 +30,15 @@ export function unprojectDepth(f, emit, opt = {}) {
   let n = 0;
   for (let py = step >> 1; py < h; py += step) {
     for (let px = step >> 1; px < w; px += step) {
-      const raw = data[py * w + px];
+      const idx = py * w + px;
+      const raw = data[idx];
       if (!raw) continue;
+      if (edge > 0) {
+        const lim = raw * edge;
+        const l = px > 0 ? data[idx - 1] : raw, r = px + 1 < w ? data[idx + 1] : raw;
+        const u = py > 0 ? data[idx - w] : raw, b = py + 1 < h ? data[idx + w] : raw;
+        if (!l || !r || !u || !b || Math.abs(l - raw) > lim || Math.abs(r - raw) > lim || Math.abs(u - raw) > lim || Math.abs(b - raw) > lim) continue;
+      }
       const d = raw * s;
       if (d < minD || d > maxD) continue;
       // buffer de depth normalizado -> view normalizada

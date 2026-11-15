@@ -7,6 +7,8 @@ import { Character } from './character.js';
 import { Pad, B } from './gamepad.js';
 import { Link } from './net.js';
 import { Hud } from './hud.js';
+import { Games } from './games.js';
+import { sfx } from './sfx.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -14,8 +16,10 @@ const SIM = params.has('sim');
 const DANCES = ['danceBreakin', 'danceCWalk', 'danceShuffle', 'danceHype', 'danceSnoop', 'danceTechno', 'vibe'];
 
 // ------------------------------------------------------------------ preferências
-const cfg = { height: 0.25, res: 0.03, orient: 'landscape' };
+const cfg = { height: 0.25, res: 0.03, orient: 'free' };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem('rastame.cfg') || '{}')); } catch { /* sem storage */ }
+// v2: o padrão passou a ser seguir o celular (em pé OU deitado); a trava na horizontal virou opção
+if (!cfg.v2) { cfg.orient = 'free'; cfg.v2 = true; }
 const saveCfg = () => { try { localStorage.setItem('rastame.cfg', JSON.stringify(cfg)); } catch { /* ok */ } };
 $('#opt-height').value = String(cfg.height);
 $('#opt-res').value = String(cfg.res);
@@ -128,6 +132,7 @@ function stopPreview() {
 startPreview();
 
 btnAr.onclick = async () => {
+  sfx.unlock();
   if (!xrSupported) { location.search = '?sim=1'; return; }
   btnAr.disabled = true; setBtn('Abrindo a câmera…');
   await prepareLandscape();
@@ -188,7 +193,19 @@ async function boot() {
 
   Object.assign(G, { renderer, scene, camera, world, char, avatar, sun });
   buildOverlays();
-  G.hud = new Hud($('#hud'), pad, { onExit: () => { if (G.session) G.session.end(); else location.href = location.pathname; } });
+  G.hud = new Hud($('#hud'), pad, {
+    onExit: () => { if (G.session) G.session.end(); else location.href = location.pathname; },
+    onGame: (id) => {
+      if (!G.placed) { toast('Coloque o avatar no mundo primeiro'); return; }
+      sfx.unlock(); G.games.start(id);
+    },
+    onAction: onHudAction,
+  });
+  G.games = new Games({
+    R: RAPIER, scene, world, char, hud: G.hud, toast: (m) => toast(m),
+    camPos: G.camPos, camFwd: G.camFwd,
+  });
+  char.onMantle = () => sfx.climb();
   G.hud.size(fmtSize(cfg.height));
   char.onRespawn = () => toast('Caiu onde a câmera não viu — mostre o chão para ele cair lá');
   world.onScores = onCalScores;
@@ -238,7 +255,8 @@ async function startAR() {
     }
   }
   // toque na tela (fora dos botões) coloca o avatar onde a câmera mira
-  session.addEventListener('select', () => { if (!G.placed) place(); });
+  session.addEventListener('select', () => { if (!G.placed && G.phase !== 'scan') place(); });
+  startScan();
   session.addEventListener('end', () => { try { screen.orientation?.unlock?.(); } catch { /* ok */ } location.reload(); });
   hint('Mova o celular devagar sobre a mesa ou o chão');
   renderer.setAnimationLoop(onXRFrame);
@@ -356,6 +374,7 @@ async function startSim() {
   G.world.occlusion = false;          // e já se oculta sozinho (no AR o fundo é a câmera)
   G.floorGuess = params.has('floorGuess') ? Number(params.get('floorGuess')) : 0;
   hint('Simulador: mire na mesa e toque em “Colocar aqui” (ou Espaço) · arraste para girar a câmera');
+  if (!params.has('noscan')) startScan();
   const clock = new THREE.Clock();
   let lastDepth = -1;
   // ?noise=0.04 simula depth ruidoso de aparelho real (fração da distância)
@@ -449,15 +468,17 @@ function tick(t) {
   _right.set(-_fwd.z, 0, _fwd.x);
 
   handleGlobalButtons();
+  if (G.phase === 'scan') updateScan();
   if (!G.placed) {
-    updatePreview(dt);
-    if (pad.pressed(B.CROSS)) place();
+    if (G.phase === 'scan') G.avatar.root.visible = false;
+    else { updatePreview(dt); if (pad.pressed(B.CROSS)) place(); }
   } else {
     handleButtons();
     _move.set(0, 0, 0).addScaledVector(_right, pad.lx).addScaledVector(_fwd, -pad.ly);
     char.update(dt, { move: _move, mag: pad.lm, sprint: pad.r2, walk: pad.held(B.L2), jump: pad.pressed(B.CROSS) });
   }
   world.step(dt);
+  G.games.update(dt);
   updateStick(dt);
   updateTrail();
   updateShadows();
@@ -471,7 +492,44 @@ function tick(t) {
   if (t - G.lastState > 100) { G.lastState = t; sendState(); }
 }
 
+// ------------------------------------------------------------------ escaneamento guiado
+/** antes de colocar (ou pelo menu): mostra a malha surgindo e mede a cobertura do ambiente */
+function startScan() {
+  G.phase = 'scan';
+  G.scanWasDebug = G.world.debug;
+  G.world.debug = true;          // a malha colorida aparece enquanto mapeia (efeito de scanner)
+  G.hud.scan(true, 0);
+  hint('');
+}
+function updateScan() {
+  const w = G.world;
+  const planes = w.planes.filter((p) => p.n >= 10).sort((a, b) => a.y - b.y);
+  const surface = planes.length > 0;
+  const floor = planes.length > 1 && planes[planes.length - 1].y - planes[0].y > 0.3;
+  const cover = Math.min(1, w.occupied / 1500);
+  const prog = 0.55 * cover + (surface ? 0.25 : 0) + (floor ? 0.2 : 0);
+  const txt = `Superfície ${surface ? '✓' : '…'}  ·  Chão ${floor ? '✓' : '…'}  ·  Mapa ${Math.round(cover * 100)}%`;
+  G.hud.scan(true, prog, prog >= 1 ? 'Ambiente pronto! ' + txt : txt);
+}
+function endScan() {
+  if (G.phase !== 'scan') return;
+  G.phase = G.placed ? 'play' : 'place';
+  G.world.debug = !!G.scanWasDebug;
+  G.hud.scan(false);
+  if (!G.placed) hint(G.sim ? '' : 'Mire onde o avatar vai ficar');
+}
+function onHudAction(a) {
+  if (a === 'scanDone') endScan();
+  else if (a === 'scan') startScan();
+  else if (a === 'hi' && G.placed) G.char.playEmote(G.char.emote === 'hi' ? 'wave' : 'hi');
+  else if (a === 'mute') { sfx.muted = !sfx.muted; toast(sfx.muted ? 'Som desligado' : 'Som ligado'); }
+  else if (a === 'stopGame') G.games.stop();
+  else if (a === 'again') G.games.again();
+}
+
 function place() {
+  if (G.phase === 'scan') return;
+  G.phase = 'play';
   if (!G.reticleHit) { toast('Mire numa mesa ou no chão'); return; }
   const p = G.retSmooth.clone();
   spawnAt(p);
@@ -571,16 +629,29 @@ function spawnAt(p) {
 function handleButtons() {
   const { char, world } = G;
   const H = char.height;
-  if (pad.pressed(B.SQUARE)) char.playEmote(char.emote === 'hi' ? 'wave' : 'hi');
+  if (pad.pressed(B.SQUARE)) {
+    if (char.held) { char.release(false); sfx.grab(); }
+    else {
+      const pr = char.reachable(world.props);
+      if (pr) { char.grab(pr); sfx.grab(); } else toast('Chegue perto de uma bola ou caixa');
+    }
+  }
   if (pad.pressed(B.UP)) char.playEmote('cheer');
   if (pad.pressed(B.DOWN)) char.playEmote('sitIdle', true);
   if (pad.pressed(B.LEFT)) char.playEmote('clap');
   if (pad.pressed(B.RIGHT)) { const d = DANCES[G.danceIdx++ % DANCES.length]; char.playEmote(d, true); toast('♪ ' + d.replace('dance', '')); }
   if (pad.pressed(B.TRIANGLE)) {
     const f = new THREE.Vector3(Math.sin(char.yaw), 0, Math.cos(char.yaw));
-    world.spawnBox(char.position.clone().addScaledVector(f, H * 0.7).add(new THREE.Vector3(0, H * 1.4, 0)), Math.max(0.03, H * 0.32));
+    // caixa de ~meia altura do avatar: dá para subir nela (e empilhar para alcançar lugares altos)
+    world.spawnBox(char.position.clone().addScaledVector(f, H * 0.75).add(new THREE.Vector3(0, H * 1.2, 0)), Math.max(0.03, H * 0.46));
   }
-  if (pad.pressed(B.CIRCLE)) throwBall();
+  if (pad.pressed(B.CIRCLE)) {
+    if (char.held) {
+      const t = char.held.body.translation();
+      const v = G.games.aimVelocity(t, char.yaw);      // mira assistida nos minigames
+      char.release(true, v); sfx.throw();
+    } else throwBall();
+  }
   if (pad.pressed(B.L1) || pad.pressed(B.R1)) {
     const k = pad.pressed(B.R1) ? 1.25 : 0.8;
     cfg.height = Math.round(THREE.MathUtils.clamp(char.height * k, 0.06, 2.0) * 100) / 100;
@@ -673,13 +744,14 @@ function updateShadows() {
 function chip(label, value, cls = '') { return `<span class="chip ${cls}">${label} <b>${value}</b></span>`; }
 function updateHud() {
   const { hud, world } = G;
+  if (G.placed) hud.context({ canGrab: !!G.char.reachable(world.props), holding: !!G.char.held });
   // com o PS4 conectado o joystick/botões da tela somem (voltam se ele desconectar)
   hud.touchVisible = !pad.connected;
   if (!G.placed) {
     if (!G.reticleHit) hud.status('search', 'Procurando superfície…');
     else hud.status('ready', G.retStable ? 'Pronto — toque em Colocar aqui' : 'Segure firme um instante');
   } else hud.status(G.fps < 24 ? 'warn' : 'ok', G.char.state === 'air' ? 'No ar' : 'No mundo');
-  hud.toggles({ malha: world.debug, oclusao: world.occlusion, rec: !!link.server.recording });
+  hud.toggles({ malha: world.debug && G.phase !== 'scan', oclusao: world.occlusion, rec: !!link.server.recording, som: !sfx.muted });
   const s = link.server;
   hud.diag([
     chip('controle', pad.connected ? 'ok' : pad.source === 'teclado' ? 'teclado' : '—', pad.connected ? 'ok' : 'warn'),

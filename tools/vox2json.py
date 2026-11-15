@@ -36,6 +36,7 @@ ANIMS = {
     'danceShuffle': 'Dance Shuffle 01', 'danceHype': 'Dance Hype 01',
     'danceSnoop': 'Dance SnoopDogg 01', 'danceTechno': 'Dance Techno 01',
     'vibe': 'Vibe 01', 'tpose': 'T',
+    'pickUp': 'Pick Up 01', 'mantle': 'Mantle 01', 'interact': 'Interact 01',
 }
 
 

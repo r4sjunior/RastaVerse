@@ -51,6 +51,7 @@ function select(n) {
 }
 for (const n of names) { const b = document.createElement('button'); b.textContent = n; b.onclick = () => select(n); list.appendChild(b); }
 select(q.get('anim') || 'idle');
+if (q.has('carry')) { avatar.carry = true; avatar._carryW = 1; }
 if (q.has('t')) { avatar.update(Number(q.get('t'))); }
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {

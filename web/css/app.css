@@ -165,7 +165,8 @@ button { font: inherit; }
 .h-act.a-jump b { font-size: 11px; font-weight: 700; margin-top: -2px; }
 .h-act.a-ball { right: 53%; bottom: 3%; width: 31%; height: 31%; color: #ff9d8f !important; }
 .h-act.a-box { right: 43%; bottom: 43%; width: 31%; height: 31%; color: #9be38f !important; }
-.h-act.a-hi { right: 3%; bottom: 53%; width: 31%; height: 31%; color: #f3c9ff !important; }
+.h-act.a-grab { right: 3%; bottom: 53%; width: 31%; height: 31%; color: #f3c9ff !important; }
+.h-act.a-grab.glow { border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(217, 226, 122, .35), 0 0 18px rgba(217, 226, 122, .45); }
 .h-act.on:not(.a-jump) { background: rgba(255, 255, 255, .25) !important; }
 .h-act { align-content: center; }
 .h-act:not(.a-jump) svg { width: 26px; height: 26px; }
@@ -191,6 +192,56 @@ button { font: inherit; }
 .h-size button { font-size: 22px; padding: 6px 0; }
 .h-size span { text-align: center; font-size: 17px; font-weight: 700; }
 #hud.menu-open .h-joyzone, #hud.menu-open .h-actions { visibility: hidden; }
+
+/* escaneamento */
+#hud.scanning .h-place, #hud.scanning .h-hint { display: none; }
+.h-scan { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 18px); transform: translateX(-50%); width: min(420px, calc(100% - 32px));
+  padding: 14px 16px 12px; border-radius: 18px; background: rgba(14, 16, 19, .86); border: 1px solid var(--glass-line); pointer-events: auto; }
+.h-scan-t { margin: 0; font-weight: 700; font-size: 15px; }
+.h-scan-s { margin: 4px 0 10px; color: #c4c7bc; font-size: 13px; }
+.h-bar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.h-bar i { display: block; height: 100%; width: 0; border-radius: 99px; transition: width .3s;
+  background: linear-gradient(90deg, var(--rasta-r), var(--rasta-y), var(--rasta-g)); }
+.h-scan-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.h-scan-row button { padding: 10px 18px; border-radius: 12px; font-weight: 700; background: rgba(255, 255, 255, .08) !important; }
+.h-scan-row .h-scan-done { background: var(--accent) !important; color: var(--accent-ink) !important; }
+.h-scan-row .h-scan-done:disabled { opacity: .4; }
+.h-scan-row .h-scan-done.ready { box-shadow: 0 0 0 3px rgba(217, 226, 122, .35); }
+
+/* placar do minigame */
+.h-game { position: absolute; top: calc(var(--safe-t) + 52px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
+  padding: 7px 8px 7px 14px; border-radius: 99px; background: rgba(14, 16, 19, .82); border: 1px solid rgba(217, 226, 122, .35); white-space: nowrap; font-size: 14px; }
+.h-game b { color: var(--accent); font-size: 13px; }
+.h-game span { font-weight: 700; font-variant-numeric: tabular-nums; }
+.h-game span.low { color: var(--bad); }
+.h-game button { width: 28px; height: 28px; border-radius: 50%; background: rgba(255, 255, 255, .1) !important; font-size: 12px; }
+.h-count { position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%); font: 800 clamp(56px, 18vmin, 110px)/1 "Space Grotesk", system-ui, sans-serif;
+  color: var(--accent); text-shadow: 0 6px 30px rgba(0, 0, 0, .55); }
+.h-count.pop { animation: pop .5s ease-out; }
+@keyframes pop { from { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } }
+
+/* resultado */
+.h-result { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .35); pointer-events: auto; }
+.h-result-in { width: min(340px, calc(100% - 40px)); padding: 20px 20px 16px; border-radius: 22px; text-align: center; background: rgba(18, 20, 24, .96);
+  border: 1px solid rgba(217, 226, 122, .3); box-shadow: 0 20px 60px rgba(0, 0, 0, .5); animation: up .2s ease-out; }
+.h-r-k { margin: 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+.h-result h3 { margin: 6px 0 0; font: 700 20px "Space Grotesk", system-ui, sans-serif; }
+.h-r-big { margin: 10px 0 2px; font: 800 40px/1 "Space Grotesk", system-ui, sans-serif; color: var(--accent); }
+.h-r-sub { margin: 6px 0 14px; color: #c4c7bc; font-size: 13px; }
+.h-r-row { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+.h-r-row button { padding: 13px; border-radius: 14px; font-weight: 700; background: rgba(255, 255, 255, .08) !important; }
+.h-r-row button.pri { background: var(--accent) !important; color: var(--accent-ink) !important; }
+
+/* lista de minigames no menu */
+.h-games { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.h-games button { display: grid; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 14px; background: rgba(217, 226, 122, .08) !important;
+  border: 1px solid rgba(217, 226, 122, .22) !important; }
+.h-games b { font-size: 13.5px; color: #f0f2e4; }
+.h-games small { font-size: 11.5px; color: #aeb1a6; line-height: 1.3; }
+.h-games em { font-style: normal; font-size: 11px; color: var(--accent); }
+.h-games em:empty { display: none; }
+.h-row { grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)) !important; }
+.h-sheet-in { max-height: 88svh; overflow-y: auto; }
 
 /* =================================================================== responsivo */
 /* horizontal (celular deitado): HUD mais baixo, joystick e ações nos cantos, menu vira painel lateral */
