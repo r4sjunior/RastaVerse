@@ -1,9 +1,15 @@
 // Mundo físico em escala 1:1 (metros, gravidade 9,81 m/s²).
-// A geometria real vem do depth do ARCore -> VoxelMap -> um colisor cúbico fixo por voxel ocupado.
+// A geometria real vem do depth do ARCore -> VoxelMap (worker) -> malhas de colisão por bloco.
 // Os mesmos voxels viram malha invisível de oclusão (o avatar some atrás de objetos reais)
 // (a sombra do avatar cai num disco ShadowMaterial embaixo dele — ver app.js).
 import * as THREE from 'three';
-import { unpackKey } from '/shared/voxelmap.js';
+import { unpackKey, packKey } from '/shared/voxelmap.js';
+
+// O mapa vira colisão em BLOCOS de 16x16x16 voxels: cada bloco é UMA malha (trimesh) com só as faces
+// expostas e o topo na altura medida. Milhares de cuboides soltos custavam ~1 ms por passo de física
+// (11 ms num celular); em blocos o passo cai para ~0,03 ms.
+const CH = 16;
+const chunkOf = (i, j, k) => packKey(Math.floor(i / CH), Math.floor(j / CH), Math.floor(k / CH));
 
 export const G = 9.81;
 
@@ -21,7 +27,8 @@ export class World {
     this.busy = false;               // um quadro por vez no worker (descarta se ainda está ocupado)
     this.onScores = null;
     this.surfaceBuf = [];
-    this.colliders = new Map();      // key -> collider
+    this.chunks = new Map();         // chave do bloco -> { keys:Set, collider, dirty, built }
+    this.dirty = new Set();
     this.slot = new Map();           // key -> índice da instância
     this.keys = [];                  // índice -> key
     this.pendingAdd = new Map();     // key -> topo da superfície
@@ -67,9 +74,15 @@ export class World {
   }
 
 
-  set debug(v) { this.debugMesh.visible = v; }
+  set debug(v) {
+    this.debugMesh.visible = v;
+    if (v && this.debugMesh._stale) { this.debugMesh._stale = false; this.debugMesh.instanceMatrix.needsUpdate = true; this.debugMesh.instanceColor.needsUpdate = true; }
+  }
   get debug() { return this.debugMesh.visible; }
-  set occlusion(v) { this.occluder.visible = v; }
+  set occlusion(v) {
+    this.occluder.visible = v;
+    if (v && this.occluder._stale) { this.occluder._stale = false; this.occluder.instanceMatrix.needsUpdate = true; }
+  }
   get occlusion() { return this.occluder.visible; }
 
   /**
@@ -108,15 +121,38 @@ export class World {
   }
 
   /** aplica as mudanças do mapa nos colisores e malhas (com orçamento por quadro: sem picos) */
-  sync(budget = 120) {
+  sync(budget = 600) {
     let n = 0;
     for (const k of this.pendingRemove) { if (n >= budget) break; this._remove(k); this.pendingRemove.delete(k); n++; }
     for (const [k, top] of this.pendingAdd) { if (n >= budget) break; this._add(k, top); this.pendingAdd.delete(k); n++; }
+    // reconstrói no máximo 2 blocos por quadro, e cada bloco no máximo a cada 0,25 s
+    const now = performance.now();
+    let built = 0;
+    for (const ck of this.dirty) {
+      if (built >= 2) break;
+      const c = this.chunks.get(ck);
+      if (!c) { this.dirty.delete(ck); continue; }
+      if (now - c.built < 250) continue;
+      this._buildChunk(ck, c); this.dirty.delete(ck); c.built = now; built++;
+    }
     if (n) {
+      // envia à GPU só a parte usada do buffer (antes ia o buffer inteiro, ~2,5 MB, a cada mudança)
+      const cnt = this.keys.length;
       for (const m of [this.occluder, this.debugMesh]) {
-        m.count = this.keys.length; m.instanceMatrix.needsUpdate = true;
+        m.count = cnt;
+        if (!m.visible) { m._stale = true; continue; }
+        m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, cnt * 16); m.instanceMatrix.needsUpdate = true;
       }
-      this.debugMesh.instanceColor.needsUpdate = true;
+      if (this.debugMesh.visible) {
+        const c = this.debugMesh.instanceColor; c.clearUpdateRanges(); c.addUpdateRange(0, cnt * 3); c.needsUpdate = true;
+      }
+    }
+  }
+
+  _touch(i, j, k) {
+    // marca o bloco do voxel e os vizinhos (as faces laterais dependem dos voxels ao lado)
+    for (const [di, dj, dk] of [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+      this.dirty.add(chunkOf(i + di, j + dj, k + dk));
     }
   }
 
@@ -125,16 +161,15 @@ export class World {
     if (this.keys.length >= this.capacity) return;
     const [i, j, k] = unpackKey(key, this._t);
     const r = this.res;
-    // o topo do colisor fica na altura média medida (não no topo quantizado do voxel)
+    // o topo fica na altura média medida (não no topo quantizado do voxel)
     const hy = (top - j * r) / 2;
     const x = (i + 0.5) * r, y = j * r + hy, z = (k + 0.5) * r;
-    const col = this.physics.createCollider(
-      // 1,5x mais largo que o voxel: colisores vizinhos se sobrepõem e fecham buracos de 1 voxel
-      // (depth esparso/ruidoso), então o personagem não afunda nem enrosca nas emendas
-      this.R.ColliderDesc.cuboid(r * 0.75, hy, r * 0.75).setTranslation(x, y, z).setFriction(0.9).setRestitution(0.1),
-    );
-    this.colliders.set(key, col);
     this.tops.set(key, top);
+    const ck = chunkOf(i, j, k);
+    let c = this.chunks.get(ck);
+    if (!c) { c = { keys: new Set(), collider: null, built: 0 }; this.chunks.set(ck, c); }
+    c.keys.add(key);
+    this._touch(i, j, k);
     const idx = this.keys.length;
     this.keys.push(key); this.slot.set(key, idx);
     this._m.makeScale(1, (2 * hy) / r, 1).setPosition(x, y, z);
@@ -148,9 +183,10 @@ export class World {
   _remove(key) {
     const idx = this.slot.get(key);
     if (idx === undefined) return;
-    const col = this.colliders.get(key);
-    if (col) this.physics.removeCollider(col, false);
-    this.colliders.delete(key); this.slot.delete(key); this.tops.delete(key);
+    const [i, j, k] = unpackKey(key, this._t);
+    this.chunks.get(chunkOf(i, j, k))?.keys.delete(key);
+    this._touch(i, j, k);
+    this.slot.delete(key); this.tops.delete(key);
     const last = this.keys.length - 1;
     if (idx !== last) {
       const lk = this.keys[last];
@@ -163,11 +199,80 @@ export class World {
     this.keys.pop();
   }
 
+  /** malha de colisão de um bloco: topo na altura medida + laterais/fundo só onde estão expostos */
+  _buildChunk(ck, c) {
+    if (c.collider) { this.physics.removeCollider(c.collider, false); c.collider = null; }
+    if (!c.keys.size) { this.chunks.delete(ck); return; }
+    const r = this.res, tops = this.tops, t = this._t;
+    const v = [], idx = [];
+    const quad = (ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz) => {
+      const o = v.length / 3;
+      v.push(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz);
+      idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+    };
+    // topos e fundos: retângulos mesclados (greedy) por altura — a mesa vira poucos retângulos grandes.
+    // Com um quadradinho por voxel o controlador do avatar ficava ~20x mais lento.
+    const groups = new Map();            // "t|altura" ou "b|altura" -> lista de (i,k)
+    const addFace = (tag, y, i, k) => {
+      const gk = tag + '|' + Math.round(y / 0.002);
+      let g = groups.get(gk); if (!g) { g = []; groups.set(gk, g); }
+      g.push(i, k);
+    };
+    for (const key of c.keys) {
+      unpackKey(key, t);
+      const i = t[0], j = t[1], k = t[2];
+      const y1 = tops.get(key), y0 = j * r;
+      const x0 = i * r, x1 = x0 + r, z0 = k * r, z1 = z0 + r;
+      if (!tops.has(packKey(i, j + 1, k))) addFace('t', y1, i, k);
+      if (!tops.has(packKey(i, j - 1, k))) addFace('b', y0, i, k);
+      // laterais: inteiras se o vizinho não existe; só a faixa de cima se o vizinho é mais baixo
+      let nt = tops.get(packKey(i + 1, j, k)); let bb = nt === undefined ? y0 : nt;
+      if (bb < y1 - 1e-3) quad(x1, bb, z0, x1, y1, z0, x1, y1, z1, x1, bb, z1);                     // +x
+      nt = tops.get(packKey(i - 1, j, k)); bb = nt === undefined ? y0 : nt;
+      if (bb < y1 - 1e-3) quad(x0, bb, z0, x0, bb, z1, x0, y1, z1, x0, y1, z0);                     // -x
+      nt = tops.get(packKey(i, j, k + 1)); bb = nt === undefined ? y0 : nt;
+      if (bb < y1 - 1e-3) quad(x0, bb, z1, x1, bb, z1, x1, y1, z1, x0, y1, z1);                     // +z
+      nt = tops.get(packKey(i, j, k - 1)); bb = nt === undefined ? y0 : nt;
+      if (bb < y1 - 1e-3) quad(x0, bb, z0, x0, y1, z0, x1, y1, z0, x1, bb, z0);                     // -z
+    }
+    for (const [gk, cells] of groups) {
+      const top = gk[0] === 't', y = Number(gk.slice(2)) * 0.002;
+      let mi = Infinity, mk = Infinity, Mi = -Infinity, Mk = -Infinity;
+      for (let n = 0; n < cells.length; n += 2) { mi = Math.min(mi, cells[n]); Mi = Math.max(Mi, cells[n]); mk = Math.min(mk, cells[n + 1]); Mk = Math.max(Mk, cells[n + 1]); }
+      const W = Mi - mi + 1, D = Mk - mk + 1, grid = new Uint8Array(W * D);
+      for (let n = 0; n < cells.length; n += 2) grid[(cells[n + 1] - mk) * W + (cells[n] - mi)] = 1;
+      for (let kz = 0; kz < D; kz++) {
+        for (let ix = 0; ix < W; ix++) {
+          if (grid[kz * W + ix] !== 1) continue;
+          let w = 1; while (ix + w < W && grid[kz * W + ix + w] === 1) w++;
+          let d = 1;
+          grow: while (kz + d < D) { for (let q = 0; q < w; q++) if (grid[(kz + d) * W + ix + q] !== 1) break grow; d++; }
+          for (let dd = 0; dd < d; dd++) for (let q = 0; q < w; q++) grid[(kz + dd) * W + ix + q] = 2;
+          const x0 = (mi + ix) * r, x1 = (mi + ix + w) * r, z0 = (mk + kz) * r, z1 = (mk + kz + d) * r;
+          if (top) quad(x0, y, z0, x0, y, z1, x1, y, z1, x1, y, z0);
+          else quad(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1);
+        }
+      }
+    }
+    if (!idx.length) return;
+    const verts = new Float32Array(v), ind = new Uint32Array(idx);
+    let desc;
+    try { desc = this.R.ColliderDesc.trimesh(verts, ind, this.R.TriMeshFlags.FIX_INTERNAL_EDGES); }
+    catch { desc = this.R.ColliderDesc.trimesh(verts, ind); }
+    c.collider = this.physics.createCollider(desc.setFriction(0.9).setRestitution(0.1));
+  }
+
   clear() {
     this.worker.postMessage({ t: 'clear' });
     this.pendingAdd.clear();
     for (const k of this.keys) this.pendingRemove.add(k);
     this.minY = Infinity;
+  }
+
+  /** reconstrói já todos os blocos pendentes (testes / depois de apagar o mapa) */
+  flushChunks() {
+    for (const ck of this.dirty) { const c = this.chunks.get(ck); if (c) { this._buildChunk(ck, c); c.built = performance.now(); } }
+    this.dirty.clear();
   }
 
   /** chão de reserva (plano grande) na altura estimada do piso — cobre o chão que a câmera ainda não viu */

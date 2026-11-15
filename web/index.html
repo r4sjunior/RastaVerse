@@ -34,7 +34,7 @@
       <p class="tag">Coloque seu avatar no mundo real. Ele anda, pula e cai nas superfícies de verdade — em escala 1:1.</p>
       <ul class="pills">
         <li>Física real</li>
-        <li>Joystick ou PS4</li>
+        <li>Joystick na tela</li>
         <li>Sem óculos</li>
       </ul>
       <button id="btn-ar" class="enter"><span>Entrar no mundo</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
@@ -42,8 +42,6 @@
       <p id="why" class="why"></p>
       <div class="sub-actions">
         <button id="btn-settings" class="link-btn" type="button">Ajustes e comandos</button>
-        <span aria-hidden="true">·</span>
-        <a id="btn-sim" class="link-btn" href="?sim=1">Simulador (PC)</a>
       </div>
     </div>
   </section>
@@ -52,8 +50,6 @@
     <div class="sheet-head"><h2>Ajustes</h2><button id="settings-close" class="close-btn" type="button" aria-label="Fechar">✕</button></div>
     <section class="checks">
       <div class="check" id="ck-xr"><i></i><span>Realidade aumentada (ARCore)</span><em>verificando…</em></div>
-      <div class="check" id="ck-pad"><i></i><span>Controle PS4 (opcional)</span><em>aperte qualquer botão do controle</em></div>
-      <div class="check" id="ck-srv"><i></i><span>Backend da nuvem de pontos (opcional)</span><em>conectando…</em></div>
     </section>
     <section class="opts">
       <label>Altura do avatar
@@ -66,7 +62,7 @@
       </label>
       <label>Tela no mundo
         <select id="opt-orient">
-          <option value="free" selected>Seguir o celular (em pé ou deitado)</option>
+          <option value="free" selected>Seguir o celular</option>
           <option value="landscape">Travar na horizontal</option>
         </select>
       </label>
@@ -81,12 +77,11 @@
     <h3>Comandos</h3>
     <table>
       <tr><td>Joystick da tela</td><td>andar · arraste além da borda para correr</td></tr>
-      <tr><td>Pular / Bola / Caixa / Oi</td><td>botões no canto direito</td></tr>
+      <tr><td>Pular · Pegar · Bola · Caixa</td><td>botões no canto direito (Pegar vira Soltar; Bola vira Jogar)</td></tr>
       <tr><td>Alvo (topo)</td><td>traz o avatar para onde a câmera mira</td></tr>
-      <tr><td>Menu ⋯</td><td>emotes, tamanho do avatar, malha, oclusão, gravar</td></tr>
-            <tr><td>Controle PS4</td><td>analógico, ✕ pular, ○ bola, △ caixa, □ acenar, R2 correr, L1/R1 tamanho, direcional emotes</td></tr>
+      <tr><td>Menu ⋯</td><td>minigames, emotes, tamanho do avatar, escanear de novo, som</td></tr>
+      <tr><td>Escalar</td><td>empurre contra um degrau baixo, ou pule de frente para uma borda</td></tr>
     </table>
-    <p class="kbd">No PC: WASD, Espaço, Shift, G, F, E, Q/R · IJKL gira a câmera.</p>
   </dialog>
 </main>
 

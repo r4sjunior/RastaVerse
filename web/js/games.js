@@ -93,6 +93,15 @@ export class Games {
   }
 
   _mesh(m) { this.ctx.scene.add(m); this.objs.push(m); return m; }
+
+  /** bola do jogo parada, apoiada na superfície (antes nascia no ar, quicava e rolava sozinha) */
+  _restingBall(x, z, radius, color) {
+    const { world, char } = this.ctx;
+    const gy = world.groundBelow(x, char.position.y + char.height, z, char.height * 2.5) ?? char.position.y;
+    const pr = world.spawnBall(new THREE.Vector3(x, gy + radius + 0.002, z), new THREE.Vector3(), radius, color);
+    this.bodies.push({ prop: pr });
+    return pr;
+  }
   _fixed(desc) { const c = this.ctx.world.physics.createCollider(desc); this.bodies.push({ c }); return c; }
 
   // ------------------------------------------------------------------ ciclo
@@ -148,6 +157,7 @@ export class Games {
     const g = this.cur;
     if (!g) return;
     const { hud } = this.ctx;
+    if (g.state === 'abort') return;
     g.anim?.(dt);
     if (g.state === 'count') {
       g.settle?.();
@@ -301,8 +311,7 @@ export class Games {
       if (balls.length >= 2 || char.held) return;
       const pp = char.position;
       const a = Math.random() * Math.PI * 2;
-      const pr = world.spawnBall(new THREE.Vector3(pp.x + Math.cos(a) * 0.5 * H, pp.y + 0.6 * H, pp.z + Math.sin(a) * 0.5 * H), new THREE.Vector3(), Math.max(0.02, 0.09 * H), 0xff8a3d);
-      this.bodies.push({ prop: pr });
+      this._restingBall(pp.x + Math.cos(a) * 0.45 * H, pp.z + Math.sin(a) * 0.45 * H, Math.max(0.02, 0.09 * H), 0xff8a3d);
     };
     g.feed(); g.feed();
     g.feedT = 0;
@@ -338,13 +347,36 @@ export class Games {
       return { tb, sd, out };
     };
     // pista válida = os 6 pinos com chão plano embaixo (sem borda, sem objeto no meio)
-    const valid = (b) => layout(b).out.every((q) => { const gy = world.groundBelow(q.x, b.y + 0.5 * H, q.z, H); return gy !== null && Math.abs(gy - b.y) < 0.012; });
+    const flatAt = (x, z, y) => { const gy = world.groundBelow(x, y + 0.6 * H, z, H); return gy !== null && Math.abs(gy - y) < 0.015; };
+    const valid = (b, lane = true) => {
+      if (!layout(b).out.every((q) => flatAt(q.x, q.z, b.y))) return false;
+      if (!lane) return true;
+      // pista livre: do avatar até os pinos, chão plano e sem objeto no caminho (copo, livro...)
+      for (let t = 0.2; t <= 0.9; t += 0.1) { if (!flatAt(p.x + (b.x - p.x) * t, p.z + (b.z - p.z) * t, b.y)) return false; }
+      return true;
+    };
     let base = null;
     for (const c of this.spots(12, { minD: 2.2 * H, maxD: Math.max(0.6, 4.5 * H), maxRise: 0.06 * H, minRise: -0.06 * H, spacing: 0.3 * H, flat: true })) {
       const b = new THREE.Vector3(c.x, c.y, c.z);
       if (valid(b)) { base = b; break; }
     }
-    if (!base) base = p.clone().addScaledVector(dir, 2.6 * H);
+    // reserva: 16 direções em volta do avatar, 3 distâncias, na superfície onde ele está
+    for (const lane of [true, false]) {
+      for (const d of [2.6, 2.0, 1.5]) {
+        for (let a = 0; a < 16 && !base; a++) {
+          const ang = Math.atan2(dir.x, dir.z) + (a % 2 ? 1 : -1) * Math.ceil(a / 2) * (Math.PI / 8);
+          const b = new THREE.Vector3(p.x + Math.sin(ang) * d * H, p.y, p.z + Math.cos(ang) * d * H);
+          if (valid(b, lane)) base = b;
+        }
+        if (base) break;
+      }
+      if (base) break;
+    }
+    if (!base) {
+      g.state = 'abort';
+      setTimeout(() => { this.stop(); this.ctx.toast('Pouco espaço plano para o boliche — escaneie mais a mesa ou use o chão'); }, 0);
+      return;
+    }
     const { tb: toBase } = layout(base);
     const geo = new THREE.CylinderGeometry(pinR * 0.7, pinR, pinH, 12);
     const mat = new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.35 });
@@ -375,8 +407,10 @@ export class Games {
     g.scoreText = () => `${g.score}/6 · bola ${Math.min(2, g.roll + 1)}/2`;
     g.giveBall = () => {
       const pp = char.position;
-      const pr = world.spawnBall(new THREE.Vector3(pp.x - toBase.x * 0.3 * H, pp.y + 0.5 * H, pp.z - toBase.z * 0.3 * H), new THREE.Vector3(), Math.max(0.02, 0.1 * H), 0x2c4a9a);
-      this.bodies.push({ prop: pr }); g.ball = pr; g.thrown = false;
+      // ao lado do avatar (não atrás, não entre ele e os pinos), parada
+      const sd = new THREE.Vector3(-toBase.z, 0, toBase.x);
+      g.ball = this._restingBall(pp.x + sd.x * 0.42 * H, pp.z + sd.z * 0.42 * H, Math.max(0.02, 0.1 * H), 0x2c4a9a);
+      g.thrown = false; g.heldOnce = false;
     };
     g.giveBall();
     g.aim = () => base.clone().setY(base.y + 0.1 * H); g.aimApex = 0.15 * H;
@@ -391,14 +425,16 @@ export class Games {
       }
       g.score = down;
       const b = g.ball;
-      if (b && !g.thrown && char.held !== b) {
-        const v = b.body.linvel();
-        if (Math.hypot(v.x, v.z) > 0.3 * Math.sqrt(H)) g.thrown = true;
+      if (char.held === b) g.heldOnce = true;
+      // a jogada começa quando VOCÊ solta/arremessa a bola, ou quando algum pino se mexe (bola jogada pela câmera)
+      if (!g.thrown) {
+        const pinMoving = g.pins.some((pn) => { const v = pn.body.linvel(); return Math.hypot(v.x, v.y, v.z) > 0.15 * Math.sqrt(H); });
+        if ((g.heldOnce && char.held !== b) || pinMoving) { g.thrown = true; g.rollT = 0; }
       }
       if (g.thrown) {
         g.rollT += dt;
-        const v = b.body.linvel();
-        if (g.rollT > 6 || (g.rollT > 1.2 && Math.hypot(v.x, v.y, v.z) < 0.05)) {
+        const still = (body) => { const v = body.linvel(); return Math.hypot(v.x, v.y, v.z) < 0.06; };
+        if (g.rollT > 6 || (g.rollT > 1.5 && still(b.body) && g.pins.every((pn) => still(pn.body)))) {
           g.roll++; g.rollT = 0;
           if (down === 6 || g.roll >= 2) {
             this._finish(`${down}/6`, down === 6 ? (g.roll === 1 ? 'STRIKE!' : 'SPARE!') : 'pinos derrubados', down, (a, c) => a > c);

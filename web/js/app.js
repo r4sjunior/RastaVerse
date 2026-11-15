@@ -65,20 +65,16 @@ btnAr.disabled = true;
 (async () => {
   let why = '';
   if (!window.isSecureContext) why = 'Abra pelo link https:// do app.';
-  else if (!navigator.xr) why = 'Abra este link no Google Chrome do Android.';
+  else if (!navigator.xr) why = 'Abra este link no Google Chrome de um celular Android.';
   else {
     xrSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
     if (!xrSupported) why = 'Este aparelho ainda não tem realidade aumentada. Instale/atualize o “Google Play Services for AR” e abra no Chrome.';
   }
   setCheck('#ck-xr', xrSupported ? 'ok' : 'bad', xrSupported ? 'pronto' : why);
   btnAr.disabled = false;
-  if (!xrSupported) { setBtn('Abrir simulador'); $('#why').textContent = why; $('#cam-note').hidden = true; }
+  if (!xrSupported) { btnAr.disabled = true; setBtn('Abra no celular'); $('#why').textContent = why; $('#cam-note').hidden = true; }
 })();
-const startTimer = setInterval(() => {
-  pad.poll();
-  if (pad.connected) setCheck('#ck-pad', 'ok', pad.id.slice(0, 60));
-  setCheck('#ck-srv', link.ok ? 'ok' : 'warn', link.ok ? `conectado · voxel ${(link.server.voxel || 0) * 100} cm` : 'offline (o AR funciona, mas sem nuvem de pontos no PC)');
-}, 300);
+const startTimer = setInterval(() => pad.poll(), 300);
 
 function setBtn(text) { const sp = btnAr.querySelector('span'); if (sp) sp.textContent = text; else btnAr.textContent = text; }
 
@@ -133,7 +129,7 @@ startPreview();
 
 btnAr.onclick = async () => {
   sfx.unlock();
-  if (!xrSupported) { location.search = '?sim=1'; return; }
+  if (!xrSupported) return;
   btnAr.disabled = true; setBtn('Abrindo a câmera…');
   await prepareLandscape();
   startAR().catch((e) => {
@@ -285,18 +281,6 @@ function onXRFrame(t, frame) {
           G.centerHit = hits[0];
           G.world.addPlaneHeight(_hitPos.y);
         }
-      }
-    }
-    // âncora do ARCore: quando o rastreamento se corrige, o ponto físico onde o avatar foi colocado
-    // "anda" no espaço de referência — o avatar acompanha, ficando preso à mesa de verdade
-    if (G.anchor && frame.trackedAnchors?.has(G.anchor.a)) {
-      const ap = frame.getPose(G.anchor.a.anchorSpace, ref);
-      if (ap) {
-        const m = ap.transform.matrix;
-        const dx = m[12] - G.anchor.last.x, dy = m[13] - G.anchor.last.y, dz = m[14] - G.anchor.last.z;
-        const d = Math.hypot(dx, dy, dz);
-        if (d > 0.002 && d < 0.15) G.char.shift(dx, dy, dz);
-        G.anchor.last.set(m[12], m[13], m[14]);
       }
     }
     // pontos de superfície da grade de hit-test (reforça o mapa)
@@ -456,7 +440,7 @@ function tick(t) {
   G.fps += ((dt > 0 ? 1 / dt : 60) - G.fps) * 0.05;
   pad.poll();
   const { world, char } = G;
-  world.sync(SIM ? 600 : 120);
+  world.sync(600);
   if ((G.shadowN = (G.shadowN || 0) + 1) % 2 === 0) G.renderer.shadowMap.needsUpdate = true;
 
   updateReticle(dt);
@@ -468,7 +452,7 @@ function tick(t) {
   _right.set(-_fwd.z, 0, _fwd.x);
 
   handleGlobalButtons();
-  if (G.phase === 'scan') updateScan();
+  if (G.phase === 'scan') updateScan(dt);
   if (!G.placed) {
     if (G.phase === 'scan') G.avatar.root.visible = false;
     else { updatePreview(dt); if (pad.pressed(B.CROSS)) place(); }
@@ -492,32 +476,86 @@ function tick(t) {
   if (t - G.lastState > 100) { G.lastState = t; sendState(); }
 }
 
-// ------------------------------------------------------------------ escaneamento guiado
-/** antes de colocar (ou pelo menu): mostra a malha surgindo e mede a cobertura do ambiente */
+// ------------------------------------------------------------------ escaneamento guiado (360°)
+/**
+ * Antes de colocar (ou pelo menu): o usuário gira em volta de si. 12 setores de 30° acendem conforme a
+ * câmera passa por eles mapeando; a malha colorida aparece (efeito scanner) e, quando o CHÃO é achado,
+ * uma grade circular com um anel brilhante marca a "linha do chão" no mundo real.
+ */
 function startScan() {
   G.phase = 'scan';
   G.scanWasDebug = G.world.debug;
-  G.world.debug = true;          // a malha colorida aparece enquanto mapeia (efeito de scanner)
-  G.hud.scan(true, 0);
+  G.world.debug = true;
+  G.scanSec = new Array(12).fill(0); G.scanT = 0;
+  G.scanFloor = null;
+  if (!G.floorViz) G.floorViz = buildFloorViz();
+  G.hud.scan(true, 0, '', G.scanSec.map(() => false), 0, false);
   hint('');
 }
-function updateScan() {
-  const w = G.world;
-  const planes = w.planes.filter((p) => p.n >= 10).sort((a, b) => a.y - b.y);
-  const surface = planes.length > 0;
-  const floor = planes.length > 1 && planes[planes.length - 1].y - planes[0].y > 0.3;
-  const cover = Math.min(1, w.occupied / 1500);
-  const prog = 0.55 * cover + (surface ? 0.25 : 0) + (floor ? 0.2 : 0);
-  const txt = `Superfície ${surface ? '✓' : '…'}  ·  Chão ${floor ? '✓' : '…'}  ·  Mapa ${Math.round(cover * 100)}%`;
-  G.hud.scan(true, prog, prog >= 1 ? 'Ambiente pronto! ' + txt : txt);
+
+function buildFloorViz() {
+  const grp = new THREE.Group();
+  const grid = new THREE.PolarGridHelper(2.2, 16, 8, 64, 0xd9e27a, 0xd9e27a);
+  grid.material.transparent = true; grid.material.opacity = 0.22; grid.material.depthWrite = false;
+  grp.add(grid);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2.16, 2.22, 96).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xd9e27a, transparent: true, opacity: 0.85, depthWrite: false }));
+  grp.add(ring);
+  const inner = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.09, 40).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }));
+  grp.add(inner);
+  grp.renderOrder = 12; grp.visible = false;
+  G.scene.add(grp);
+  return grp;
 }
+
+/** chão = plano confirmado bem abaixo da câmera (mesa fica a menos de ~90 cm do celular) */
+function findFloor() {
+  let best = null;
+  for (const p of G.world.planes) {
+    if (p.n < 10 || G.camPos.y - p.y < 0.9) continue;
+    if (!best || p.n > best.n) best = p;
+  }
+  return best ? best.y : null;
+}
+
+function updateScan(dt = 0.016) {
+  const w = G.world;
+  // setor para onde a câmera aponta (só conta mapeando de verdade: olhando para baixo/à frente)
+  const heading = Math.atan2(G.camFwd.x, -G.camFwd.z);
+  const sec = ((Math.floor((heading + Math.PI * 2) / (Math.PI / 6)) % 12) + 12) % 12;
+  // tempo REAL apontando para o setor (celular lento ou quadro travado também completa o 360°)
+  const now = performance.now(), rdt = Math.min(0.5, (now - (G.scanT || now)) / 1000); G.scanT = now;
+  if (G.camFwd.y < 0.2) G.scanSec[sec] = Math.min(1, G.scanSec[sec] + rdt / 0.25);
+  const covered = G.scanSec.map((v) => v >= 1);
+  const nCov = covered.filter(Boolean).length;
+  const surface = w.planes.some((p) => p.n >= 10);
+  const fy = findFloor();
+  if (fy !== null) {
+    if (G.scanFloor === null) { navigator.vibrate?.(30); toast('Chão encontrado!'); }
+    G.scanFloor = fy;
+    if (w.floorSource !== 'planes' || Math.abs(w.floorY - fy) > 0.01) w.setFloor(fy, 'planes');
+  }
+  // grade/linha do chão sob o usuário
+  const fv = G.floorViz;
+  fv.visible = G.scanFloor !== null;
+  if (fv.visible) { fv.position.set(G.camPos.x, G.scanFloor + 0.003, G.camPos.z); fv.children[1].material.opacity = 0.6 + Math.sin(performance.now() / 260) * 0.25; }
+  const cover = Math.min(1, w.occupied / 2500);
+  const prog = 0.5 * (nCov / 12) + 0.2 * cover + (surface ? 0.15 : 0) + (G.scanFloor !== null ? 0.15 : 0);
+  const floorTxt = G.scanFloor !== null ? `Chão ✓ (${(G.camPos.y - G.scanFloor).toFixed(2).replace('.', ',')} m abaixo)` : 'Chão: aponte para baixo';
+  const txt = nCov < 12 ? `Gire devagar em volta de você · ${nCov}/12 · ${floorTxt}` : `Volta completa! · ${floorTxt}`;
+  G.hud.scan(true, prog, txt, covered, heading, nCov >= 10 && surface);
+}
+
 function endScan() {
   if (G.phase !== 'scan') return;
   G.phase = G.placed ? 'play' : 'place';
   G.world.debug = !!G.scanWasDebug;
   G.hud.scan(false);
+  if (G.floorViz) G.floorViz.visible = false;
   if (!G.placed) hint(G.sim ? '' : 'Mire onde o avatar vai ficar');
 }
+
 function onHudAction(a) {
   if (a === 'scanDone') endScan();
   else if (a === 'scan') startScan();
@@ -543,7 +581,6 @@ function place() {
   G.char.playEmote('hi');
   hint('');
   pad.rumble(0.3, 0.6, 120);
-  anchorAt(p);
 }
 
 /**
@@ -564,18 +601,9 @@ function updateFloor() {
   else if (w.floorSource !== 'guess' || Math.abs(w.floorY - y) > 0.01) w.setFloor(y, 'guess');
 }
 
-/** cria uma âncora do ARCore no ponto (o avatar fica preso ao lugar físico mesmo com correções do rastreamento) */
-function anchorAt(p) {
-  G.anchor?.a.delete?.();
-  G.anchor = null;
-  const hit = G.centerHit;
-  if (!G.session || !hit?.createAnchor) return;
-  hit.createAnchor().then((a) => { G.anchor = { a, last: p.clone() }; }).catch(() => { /* sem anchors: segue sem */ });
-}
-
 /** retícula suavizada; "estável" quando o alvo parou de tremer (melhor hora de colocar) */
 function updateReticle(dt) {
-  const r = G.reticleHit, show = !!r && (!G.placed || pad.held(B.R3));
+  const r = G.reticleHit, show = !!r && G.phase !== 'scan' && (!G.placed || pad.held(B.R3));
   G.reticle.visible = show;
   if (!r) { G.retHist.length = 0; G.retStable = false; return; }
   if (G.retHist.length === 0 || G.retSmooth.distanceTo(r) > 0.25) G.retSmooth.copy(r);
@@ -661,7 +689,7 @@ function handleButtons() {
   }
   if (pad.pressed(B.R3)) {
     if (G.reticleHit) {
-      const p = G.retSmooth.clone(); spawnAt(p); G.placeY = p.y; G.placeCamH = G.camPos.y - p.y; anchorAt(p); updateFloor();
+      const p = G.retSmooth.clone(); spawnAt(p); G.placeY = p.y; G.placeCamH = G.camPos.y - p.y; updateFloor();
       toast('Avatar trazido para o alvo');
     }
     else toast('Mire numa superfície para trazer o avatar');
@@ -747,19 +775,17 @@ function updateHud() {
   if (G.placed) hud.context({ canGrab: !!G.char.reachable(world.props), holding: !!G.char.held });
   // com o PS4 conectado o joystick/botões da tela somem (voltam se ele desconectar)
   hud.touchVisible = !pad.connected;
-  if (!G.placed) {
+  if (G.phase === 'scan') hud.status('search', 'Escaneando o ambiente…');
+  else if (!G.placed) {
     if (!G.reticleHit) hud.status('search', 'Procurando superfície…');
     else hud.status('ready', G.retStable ? 'Pronto — toque em Colocar aqui' : 'Segure firme um instante');
   } else hud.status(G.fps < 24 ? 'warn' : 'ok', G.char.state === 'air' ? 'No ar' : 'No mundo');
   hud.toggles({ malha: world.debug && G.phase !== 'scan', oclusao: world.occlusion, rec: !!link.server.recording, som: !sfx.muted });
   const s = link.server;
   hud.diag([
-    chip('controle', pad.connected ? 'ok' : pad.source === 'teclado' ? 'teclado' : '—', pad.connected ? 'ok' : 'warn'),
     chip('depth', G.depthOk ? `${G.depthFrames}${G.world.flipY ? ' ↕' : ''}` : (G.session ? (cal.tries && !cal.done ? 'calibrando' : 'só planos') : '—'), G.depthOk ? 'ok' : 'warn'),
     chip('voxels', G.world.keys.length.toLocaleString('pt-BR')),
-    chip('backend', link.ok ? (s.occupied ?? 0).toLocaleString('pt-BR') : 'offline', link.ok ? 'ok' : 'bad'),
     chip('fps', Math.round(G.fps)),
-    s.recording ? '<span class="chip rec">● REC</span>' : '',
   ].join(''));
 }
 

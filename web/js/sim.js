@@ -49,7 +49,7 @@ export class Sim {
     if (!rx && !ry) return;
     const off = this._v.copy(this.camera.position).sub(this.controls.target);
     this._sph.setFromVector3(off);
-    this._sph.theta -= rx * 1.6 * dt;
+    this._sph.theta -= rx * 5 * dt;   // (os OrbitControls amortecem; 5 dá ~1 volta em 8 s)
     this._sph.phi = THREE.MathUtils.clamp(this._sph.phi + ry * 1.2 * dt, 0.15, 1.5);
     off.setFromSpherical(this._sph);
     this.camera.position.copy(this.controls.target).add(off);

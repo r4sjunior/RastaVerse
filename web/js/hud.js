@@ -42,8 +42,11 @@ export class Hud {
       <div class="h-count" hidden></div>
 
       <div class="h-scan" hidden>
-        <p class="h-scan-t">Escaneando o ambiente</p>
-        <p class="h-scan-s" data-scan-text>Mova o celular devagar mostrando a mesa e o chão</p>
+        <div class="h-scan-top">
+          <svg class="h-radar" viewBox="0 0 100 100" aria-hidden="true"><g class="secs"><path data-sec="0" d="M50 50 L50.00 6.00 A44 44 0 0 1 72.00 11.89 Z"/><path data-sec="1" d="M50 50 L72.00 11.89 A44 44 0 0 1 88.11 28.00 Z"/><path data-sec="2" d="M50 50 L88.11 28.00 A44 44 0 0 1 94.00 50.00 Z"/><path data-sec="3" d="M50 50 L94.00 50.00 A44 44 0 0 1 88.11 72.00 Z"/><path data-sec="4" d="M50 50 L88.11 72.00 A44 44 0 0 1 72.00 88.11 Z"/><path data-sec="5" d="M50 50 L72.00 88.11 A44 44 0 0 1 50.00 94.00 Z"/><path data-sec="6" d="M50 50 L50.00 94.00 A44 44 0 0 1 28.00 88.11 Z"/><path data-sec="7" d="M50 50 L28.00 88.11 A44 44 0 0 1 11.89 72.00 Z"/><path data-sec="8" d="M50 50 L11.89 72.00 A44 44 0 0 1 6.00 50.00 Z"/><path data-sec="9" d="M50 50 L6.00 50.00 A44 44 0 0 1 11.89 28.00 Z"/><path data-sec="10" d="M50 50 L11.89 28.00 A44 44 0 0 1 28.00 11.89 Z"/><path data-sec="11" d="M50 50 L28.00 11.89 A44 44 0 0 1 50.00 6.00 Z"/></g><circle cx="50" cy="50" r="18" class="hub"/><path class="needle" data-needle d="M50 50 L50 10"/></svg>
+          <div><p class="h-scan-t">Escaneie 360°</p>
+          <p class="h-scan-s" data-scan-text>Gire devagar em volta de você mostrando a mesa e o chão</p></div>
+        </div>
         <div class="h-bar"><i data-scan-bar></i></div>
         <div class="h-scan-row"><button class="h-scan-skip" data-scan-skip>Pular</button><button class="h-scan-done" data-scan-done disabled>Pronto</button></div>
       </div>
@@ -92,7 +95,6 @@ export class Hud {
             <button data-b="${B.L3}" data-tg="oclusao">Oclusão</button>
             <button data-act="mute" data-tg="som">Som</button>
             <button data-b="${B.TOUCHPAD}" data-close>Apagar mapa</button>
-            <button data-b="${B.SHARE}" data-tg="rec">Gravar</button>
           </div>
         </div>
       </div>`;
@@ -166,6 +168,7 @@ export class Hud {
       toast: q('.h-toast'), sheet: q('.h-sheet'), size: q('[data-size]'), arrow: q('.h-arrow'), count: q('.h-count'),
       game: q('.h-game'), gTitle: q('[data-g-title]'), gScore: q('[data-g-score]'), gTime: q('[data-g-time]'),
       scan: q('.h-scan'), scanText: q('[data-scan-text]'), scanBar: q('[data-scan-bar]'), scanDone: q('[data-scan-done]'),
+      secs: [...root.querySelectorAll('[data-sec]')], needle: q('[data-needle]'),
       res: q('.h-result'), rKicker: q('[data-r-kicker]'), rTitle: q('[data-r-title]'), rBig: q('[data-r-big]'), rSub: q('[data-r-sub]'),
       grab: q('.a-grab'), lblGrab: q('[data-lbl-grab]'), lblBall: q('[data-lbl-ball]'),
       toggles: { malha: q('[data-tg="malha"]'), oclusao: q('[data-tg="oclusao"]'), rec: q('[data-tg="rec"]'), som: q('[data-tg="som"]') },
@@ -210,13 +213,16 @@ export class Hud {
   }
 
   // ---------------- escaneamento
-  scan(on, progress = 0, text = '') {
+  /** sectors: array de 12 booleanos (cobertos); heading: radianos da câmera; canFinish: libera "Pronto" */
+  scan(on, progress = 0, text = '', sectors = null, heading = null, canFinish = false) {
     this.el.scan.hidden = !on;
     this.root.classList.toggle('scanning', on);
     if (!on) return;
     this.el.scanBar.style.width = `${Math.round(Math.min(1, progress) * 100)}%`;
     if (text) this.el.scanText.textContent = text;
-    this.el.scanDone.disabled = progress < 0.35;
+    if (sectors) this.el.secs.forEach((p, i) => p.classList.toggle('on', !!sectors[i]));
+    if (heading !== null) this.el.needle.setAttribute('transform', `rotate(${(heading * 180 / Math.PI).toFixed(1)} 50 50)`);
+    this.el.scanDone.disabled = !canFinish;
     this.el.scanDone.classList.toggle('ready', progress >= 1);
   }
 

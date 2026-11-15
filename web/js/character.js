@@ -21,6 +21,8 @@ export class Character {
     this.avatar = avatar;
     scene.add(avatar.root);
     this.vel = new THREE.Vector3();
+    this.p = new THREE.Vector3();
+    this.visY = 0;
     this.yaw = 0;
     this.grounded = false;
     this.airTime = 0;
@@ -41,7 +43,8 @@ export class Character {
   }
 
   get height() { return this.avatar.height; }
-  get position() { return this.avatar.root.position; }
+  /** posição lógica (física). O boneco na tela segue esta posição com a altura suavizada (ver _visual) */
+  get position() { return this.p; }
 
   /** coloca o personagem com os pés em p */
   spawn(p, height = this.avatar.height) {
@@ -59,7 +62,18 @@ export class Character {
     this.vel.set(0, 0, 0);
     this.mantle = null;
     this.lastSafe.copy(p);
-    this.position.copy(p);
+    this.p.copy(p);
+    this.visY = p.y;
+    this.avatar.root.position.copy(p);
+  }
+
+  /** boneco na tela: x/z exatos; altura suavizada nos degrauzinhos do mapa (sem tremer), salto real se for grande */
+  _visual(dt) {
+    const root = this.avatar.root.position, H = this.height;
+    const dy = this.p.y - this.visY;
+    if (!this.grounded || this.mantle || Math.abs(dy) > 0.2 * H) this.visY = this.p.y;
+    else this.visY += dy * Math.min(1, dt * 18);
+    root.set(this.p.x, this.visY, this.p.z);
   }
 
   _embedded(x, y, z) {
@@ -83,12 +97,12 @@ export class Character {
     if (!this.body) return;
     const t = this.body.translation();
     this.body.setTranslation({ x: t.x + dx, y: t.y + dy, z: t.z + dz }, true);
-    this.position.x += dx; this.position.y += dy; this.position.z += dz;
+    this.p.x += dx; this.p.y += dy; this.p.z += dz; this.visY += dy;
     this.lastSafe.x += dx; this.lastSafe.y += dy; this.lastSafe.z += dz;
   }
 
   resize(H) {
-    const p = this.position.clone();
+    const p = this.p.clone();
     this.spawn(p.add(new THREE.Vector3(0, 0.01, 0)), THREE.MathUtils.clamp(H, 0.06, 2.0));
   }
 
@@ -105,7 +119,7 @@ export class Character {
   /** objeto mais perto ao alcance das mãos (ou null) */
   reachable(props) {
     if (!this.body || this.held) return null;
-    const H = this.height, p = this.position;
+    const H = this.height, p = this.p;
     _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const hx = p.x + _fwd.x * H * 0.3, hy = p.y + H * 0.35, hz = p.z + _fwd.z * H * 0.3;
     let best = null, bd = Infinity;
@@ -135,9 +149,12 @@ export class Character {
     const pr = this.held;
     if (!pr) return null;
     const R = this.R, H = this.height;
+    _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    // afasta um pouco do corpo antes de virar sólido (não esbarra na própria cápsula ao soltar)
+    const t0 = pr.body.translation();
+    pr.body.setTranslation({ x: t0.x + _fwd.x * H * 0.06, y: t0.y, z: t0.z + _fwd.z * H * 0.06 }, true);
     for (let i = 0; i < pr.body.numColliders(); i++) pr.body.collider(i).setSensor(false);
     pr.body.setBodyType(R.RigidBodyType.Dynamic, true);
-    _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const k = Math.sqrt(H);
     if (vel) pr.body.setLinvel(vel, true);
     else if (throwIt) pr.body.setLinvel({ x: this.vel.x + _fwd.x * 3.2 * k, y: 2.2 * k, z: this.vel.z + _fwd.z * 3.2 * k }, true);
@@ -150,7 +167,7 @@ export class Character {
   _carry() {
     const pr = this.held;
     if (!pr) return;
-    const H = this.height, p = this.position;
+    const H = this.height, p = this.p;
     _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const ahead = this.radius + pr.size * 0.55 + H * 0.04;
     pr.body.setNextKinematicTranslation({ x: p.x + _fwd.x * ahead, y: p.y + H * 0.56, z: p.z + _fwd.z * ahead });
@@ -170,7 +187,7 @@ export class Character {
   }
 
   _ledgeAt(maxRise, d) {
-    const H = this.height, p = this.position;
+    const H = this.height, p = this.p;
     _fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const ox = p.x + _fwd.x * d, oz = p.z + _fwd.z * d, oy = p.y + maxRise + H * 0.05;
     const exclude = this.held ? this.held.body : undefined;
@@ -187,12 +204,12 @@ export class Character {
     const shape = this._headShape || (this._headShape = new R.Ball(this.radius * 0.8));
     if (this._headShapeH !== H) { this._headShape = new R.Ball(this.radius * 0.8); this._headShapeH = H; }
     this.world.physics.intersectionsWithShape({ x: ox, y: top + H * 0.5, z: oz }, { x: 0, y: 0, z: 0, w: 1 }, this._headShape,
-      (c) => { if (c.isSensor()) return true; blocked = true; return false; }, undefined, undefined, this.collider, exclude);
+      () => { blocked = true; return false; }, this.R.QueryFilterFlags.EXCLUDE_SENSORS, undefined, this.collider, exclude);
     return blocked ? null : { x: ox + _fwd.x * H * 0.06, y: top, z: oz + _fwd.z * H * 0.06, rise };
   }
 
   _startMantle(l) {
-    const H = this.height, p = this.position;
+    const H = this.height, p = this.p;
     const tall = l.rise > H * 0.4;
     this.mantle = { t: 0, dur: (tall ? 0.55 : 0.28) * Math.sqrt(H / 0.25), from: p.clone(), to: new THREE.Vector3(l.x, l.y + 0.004, l.z), tall };
     this.vel.set(0, 0, 0);
@@ -212,8 +229,8 @@ export class Character {
     const x = m.from.x + (m.to.x - m.from.x) * ease(kf);
     const z = m.from.z + (m.to.z - m.from.z) * ease(kf);
     this.body.setNextKinematicTranslation({ x, y: y + H / 2 + 0.002, z });
-    this.position.set(x, y, z);
-    if (k >= 1) { this.mantle = null; this.grounded = true; this.airTime = 0; this.lastSafe.copy(this.position); }
+    this.p.set(x, y, z);
+    if (k >= 1) { this.mantle = null; this.grounded = true; this.airTime = 0; this.lastSafe.copy(this.p); }
   }
 
   /**
@@ -229,6 +246,7 @@ export class Character {
       this._carry();
       this.avatar.root.quaternion.setFromAxisAngle(UP, this.yaw);
       if (!tall) this._animate(dt, 0.5);
+      this._visual(dt);
       this.avatar.update(dt);
       return;
     }
@@ -243,7 +261,8 @@ export class Character {
     // aceleração horizontal (menos controle no ar)
     _want.copy(input.move).setY(0);
     if (_want.lengthSq() > 0) _want.normalize().multiplyScalar(target);
-    const acc = (this.grounded ? 10 : 2.5) * dt;
+    // resposta rápida no chão (arranca e para sem "patinar"), menos controle no ar
+    const acc = (this.grounded ? (_want.lengthSq() > 0 ? 18 : 24) : 3) * dt;
     this.vel.x += (_want.x - this.vel.x) * Math.min(1, acc);
     this.vel.z += (_want.z - this.vel.z) * Math.min(1, acc);
 
@@ -255,7 +274,7 @@ export class Character {
     const pushing = input.mag > 0.35;
     if (pushing && (this.jumpBuffer > 0 || (!this.grounded && this.airTime > 0.05))) {
       const l = this.ledgeAhead(this.grounded ? H * 1.0 : Math.max(H * 0.2, H * 0.65));
-      if (l) { this.jumpBuffer = 0; this._startMantle(l); this.avatar.update(dt); return; }
+      if (l) { this.jumpBuffer = 0; this._startMantle(l); this._visual(dt); this.avatar.update(dt); return; }
     }
     if (this.jumpBuffer > 0 && this.coyote > 0) {
       this.jumpBuffer = 0; this.coyote = 0;
@@ -266,7 +285,9 @@ export class Character {
     }
     this.vel.y -= G * dt;
     const desired = { x: this.vel.x * dt, y: this.vel.y * dt, z: this.vel.z * dt };
-    this.kcc.computeColliderMovement(this.collider, desired, undefined, undefined, (c) => !c.isSensor());
+    // filtro nativo (ignora o objeto carregado, que vira sensor) — um predicado em JS aqui deixava o
+    // movimento ~13x mais lento: era chamado para cada bloco de colisão por perto, todo quadro
+    this.kcc.computeColliderMovement(this.collider, desired, this.R.QueryFilterFlags.EXCLUDE_SENSORS);
     const mv = this.kcc.computedMovement();
     const wasGrounded = this.grounded;
     this.grounded = this.kcc.computedGrounded();
@@ -281,7 +302,7 @@ export class Character {
       else if (this.vel.y > 0 && realY < this.vel.y * 0.5) this.vel.y = Math.min(this.vel.y, realY); // bateu a cabeça
       this.vel.x = mv.x / dt; this.vel.z = mv.z / dt;
     }
-    this.position.set(nx, ny - H / 2 - 0.002, nz);
+    this.p.set(nx, ny - H / 2 - 0.002, nz);
 
     // subir sozinho num degrau baixo (até ~meia altura) quando empurra contra ele
     // (acumula enquanto bloqueado e decai devagar: deslizar de lado na quina não zera)
@@ -298,7 +319,7 @@ export class Character {
       this.checkT = 0;
       if (this._embedded(nx, ny, nz)) {
         this.body.setNextKinematicTranslation({ x: nx, y: ny + 0.12 * H, z: nz });
-        this.position.y += 0.12 * H;
+        this.p.y += 0.12 * H;
         this.vel.y = Math.max(0, this.vel.y);
       }
     }
@@ -309,7 +330,7 @@ export class Character {
         if (this.airTime > 0.45) { this.avatar.play('land', { loop: false, fade: 0.05, restart: true }); this.landLock = 0.25; }
       }
       this.airTime = 0;
-      this.lastSafe.copy(this.position);
+      this.lastSafe.copy(this.p);
     } else this.airTime += dt;
 
     // virar para onde anda
@@ -317,20 +338,21 @@ export class Character {
     if (input.mag > 0.15) {
       const ty = Math.atan2(input.move.x, input.move.z);
       let d = ty - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-      this.yaw += d * Math.min(1, 12 * dt);
+      this.yaw += d * Math.min(1, 18 * dt);
     }
     this.avatar.root.quaternion.setFromAxisAngle(UP, this.yaw);
     this._carry();
 
     // caiu da mesa e sumiu no vazio (chão não mapeado): volta para o último lugar seguro
     const floorY = Number.isFinite(this.world.minY) ? this.world.minY - 2.5 : this.lastSafe.y - 3;
-    if (this.position.y < floorY) {
+    if (this.p.y < floorY) {
       if (this.held) this.release(false);
       this.spawn(this.lastSafe.clone().add(new THREE.Vector3(0, 0.05, 0)));
       this.onRespawn?.();
     }
 
     if (this.pickLock > 0) this.pickLock -= dt;
+    this._visual(dt);
     this._animate(dt, hs / H);
     this.avatar.update(dt);
   }
@@ -350,9 +372,9 @@ export class Character {
       return;
     }
     if (this.emote) return;
-    if (rel < 0.08) { a.play('idle'); this.state = 'idle'; }
-    else if (rel < 1.2) { a.play('walk', { speed: THREE.MathUtils.clamp(rel / 0.8, 0.5, 1.6) }); this.state = 'walk'; }
-    else if (rel < 2.5) { a.play('run', { speed: THREE.MathUtils.clamp(rel / 1.9, 0.7, 1.4) }); this.state = 'run'; }
-    else { a.play('sprint', { speed: THREE.MathUtils.clamp(rel / 3.1, 0.8, 1.3) }); this.state = 'sprint'; }
+    if (rel < 0.08) { a.play('idle', { fade: 0.15 }); this.state = 'idle'; }
+    else if (rel < 1.2) { a.play('walk', { fade: 0.12, speed: THREE.MathUtils.clamp(rel / 0.8, 0.5, 1.6) }); this.state = 'walk'; }
+    else if (rel < 2.5) { a.play('run', { fade: 0.12, speed: THREE.MathUtils.clamp(rel / 1.9, 0.7, 1.4) }); this.state = 'run'; }
+    else { a.play('sprint', { fade: 0.12, speed: THREE.MathUtils.clamp(rel / 3.1, 0.8, 1.3) }); this.state = 'sprint'; }
   }
 }

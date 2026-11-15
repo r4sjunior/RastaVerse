@@ -197,6 +197,12 @@ button { font: inherit; }
 #hud.scanning .h-place, #hud.scanning .h-hint { display: none; }
 .h-scan { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 18px); transform: translateX(-50%); width: min(420px, calc(100% - 32px));
   padding: 14px 16px 12px; border-radius: 18px; background: rgba(14, 16, 19, .86); border: 1px solid var(--glass-line); pointer-events: auto; }
+.h-scan-top { display: flex; align-items: center; gap: 12px; }
+#hud .h-radar { flex: none; width: 64px; height: 64px; }
+.h-radar .secs path { fill: rgba(255, 255, 255, .1); stroke: rgba(14, 16, 19, .9); stroke-width: 1.5; transition: fill .3s; }
+.h-radar .secs path.on { fill: var(--accent); }
+.h-radar .hub { fill: rgba(14, 16, 19, .95); }
+.h-radar .needle { stroke: #fff; stroke-width: 3; stroke-linecap: round; }
 .h-scan-t { margin: 0; font-weight: 700; font-size: 15px; }
 .h-scan-s { margin: 4px 0 10px; color: #c4c7bc; font-size: 13px; }
 .h-bar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, .1); overflow: hidden; }

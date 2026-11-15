@@ -143,6 +143,24 @@ No simulador dá para reproduzir: `?sim=1&noise=0.04` (4% de ruído).
 Captação do ambiente: filtro de "pixels voadores" nas bordas dos objetos, 3 leituras para confirmar um voxel e
 preenchimento de buracos dentro de planos (sombra atrás de objetos), sem fechar as bordas reais da mesa.
 
+## Fluidez (revisão de desempenho)
+
+Medido no simulador com CPU 4× mais lenta, avatar andando (física + movimento por quadro):
+- o filtro do controlador do avatar era um predicado em JS chamado para cada colisor por perto (29% da CPU
+  em exceções internas do Rapier) → trocado pelo filtro nativo `EXCLUDE_SENSORS`;
+- o mapa era milhares de cuboides soltos (11 ms por passo de física) → **malhas por bloco 16×16×16** com só as
+  faces expostas e **topos mesclados** (greedy meshing) na altura medida: passo de física ~0,5 ms;
+- altura do avatar suavizada só no visual (sem tremer nos degrauzinhos do mapa); aceleração/giro mais rápidos;
+- sem "puxões" da âncora do ARCore; upload parcial das instâncias da malha de debug.
+
+Total física + movimento: de ~13 ms para ~3,6 ms por quadro.
+
+## Escaneamento 360°
+
+Ao entrar: radar com 12 setores (gire em volta de você), malha aparecendo e, quando o chão é achado (plano a
+mais de 90 cm abaixo do celular), uma **grade com anel brilhante marca a linha do chão** no mundo real — e ele
+vira o chão físico na hora. "Pronto" libera com 10/12 setores e alguma superfície; "Pular" sempre disponível.
+
 ## Desempenho
 
 - o depth do ARCore é processado num **Web Worker** (`web/js/mapper.worker.js`): a tela nunca espera o mapa;
