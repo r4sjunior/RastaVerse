@@ -81,6 +81,13 @@ export class VoxelAvatar {
     this.root.add(this.model);
     this.material = opts.material || new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 });
     this.bones = [];
+    this.meshes = [];
+    // silhueta "raio-x": aparece só onde o avatar está ATRÁS de algo real (mesa, objeto),
+    // para ele nunca sumir. Desenhada depois do oclusor e antes do avatar (renderOrder).
+    this.silhouetteMat = opts.silhouette === false ? null : new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0xd9e27a).multiplyScalar(0.55), blending: THREE.AdditiveBlending,
+      depthWrite: false, depthFunc: THREE.GreaterDepth,
+    });
     const geoCache = {};
     data.bones.forEach((b, i) => {
       const g = new THREE.Group();
@@ -94,6 +101,12 @@ export class VoxelAvatar {
         m.castShadow = true;
         m.name = b.part;
         g.add(m);
+        this.meshes.push(m);
+        if (this.silhouetteMat) {
+          const s = new THREE.Mesh(geoCache[b.part], this.silhouetteMat);
+          s.renderOrder = -5; s.name = b.part + ':silhueta';
+          g.add(s);
+        }
       }
     });
     this.poseA = this.bones.map(() => ({ p: new THREE.Vector3(), q: new THREE.Quaternion(), s: 1 }));
@@ -119,6 +132,17 @@ export class VoxelAvatar {
     this.scale = m / this.voxelHeight;
     this.model.scale.setScalar(this.scale);
     this.model.position.y = -this.voxelFootY * this.scale;
+  }
+
+  /** prévia translúcida (antes de colocar no mundo) */
+  setGhost(on) {
+    if (this.ghost === on) return;
+    this.ghost = on;
+    this.material.transparent = on;
+    this.material.opacity = on ? 0.55 : 1;
+    this.material.depthWrite = !on;
+    this.material.needsUpdate = true;
+    for (const m of this.meshes) m.castShadow = !on;
   }
 
   has(name) { return !!this.data.anims[name]; }

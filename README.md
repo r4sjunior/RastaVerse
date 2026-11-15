@@ -40,10 +40,15 @@ O WebXR só abre em página HTTPS. Publicando na Vercel o app já sai em HTTPS:
 2. Na Vercel: **Add New › Project**, importe o repositório. O `vercel.json` já configura tudo
    (build `npm run build` → pasta `dist/`). Não precisa de variável de ambiente.
 3. No celular Android, abra `https://<seu-projeto>.vercel.app` no **Chrome** → **Entrar no mundo** e permita a câmera.
-4. Mova o celular devagar sobre a mesa/chão até aparecer o alvo branco e toque em **Colocar aqui**.
-   O avatar aparece onde a câmera está mirando. Controle pelo **joystick da tela** (arrastar além da borda = correr)
-   e pelos botões Pular / Bola / Caixa / Oi; à direita: Trazer aqui (leva o avatar para onde a câmera mira),
-   Dançar, − / + (tamanho) e Malha. Com o PS4 pareado, os botões da tela somem e vale o controle.
+4. Mova o celular devagar sobre a mesa ou o chão. Uma **prévia translúcida** do avatar aparece no alvo;
+   quando o alvo fica **verde** (estável), toque em **Colocar aqui**. O avatar fica ancorado ao ponto físico
+   (âncora do ARCore).
+5. Controles na tela:
+   - **joystick flutuante**: encoste o polegar em qualquer lugar da metade esquerda; arrastar além da borda = correr;
+   - **Pular** (botão grande), **Bola**, **Caixa**, **Oi** no canto direito;
+   - topo: **alvo** (traz o avatar para onde a câmera mira), **⋯** menu (emotes, tamanho, malha, oclusão, gravar), **✕** sair.
+   Se o avatar sair da tela, uma **seta** na borda aponta para ele; atrás de objetos reais ele aparece como **silhueta**.
+   Com o PS4 pareado, os controles da tela somem e vale o controle.
 
 Na Vercel não há backend: o AR, a física e o avatar funcionam 100% no celular; só a nuvem de pontos no PC
 (viewer/gravação) precisa do `npm start` local, abaixo.
@@ -103,7 +108,7 @@ animações, edite o dicionário `ANIMS`. Paleta é BGR; o espaço é mão-esque
 server/server.js      backend: estáticos, WebSocket, fusão de voxels, gravação, PLY
 shared/               código comum celular+servidor: depth.js (desprojeção), voxelmap.js, protocol.js, mat4.js
 web/index.html        app AR/simulador · js/app.js (loop), world.js (Rapier + voxels), character.js,
-                      avatar.js, gamepad.js, touch.js (joystick na tela), net.js, sim.js · viewer.html + js/viewer.js
+                      avatar.js, gamepad.js, hud.js (HUD, joystick, menu), net.js, sim.js · viewer.html + js/viewer.js
 tools/                vox2json.py, reconstruct_open3d.py, make-cert.mjs, build.mjs (gera dist/ para a Vercel)
 test/                 npm test — matemática do depth (inclui buffer girado de celular em retrato), protocolo, mapa
 ```
@@ -113,7 +118,8 @@ test/                 npm test — matemática do depth (inclui buffer girado de
 O depth do ARCore em mesas lisas tem vários cm de ruído. Para o avatar não afundar nem travar:
 - **planos do ARCore como verdade**: pontos de depth a até ~4 cm de um plano horizontal detectado são colados no plano;
 - **autocalibração** da orientação do depth nos primeiros quadros (compara com o plano do alvo; o chip "depth" mostra `↕` se invertido);
-- o avatar **nasce em cima** do que houver no alvo e é **destravado** automaticamente se ficar preso;
+- o avatar **nasce em cima** do que houver no alvo e é **destravado** se o chão ruidoso surgir por cima dos pés;
+- o **chão físico** vem do plano real do chão detectado pelo ARCore (não só da estimativa do `local-floor`);
 - a oclusão desce 2 cm, então o ruído da superfície não esconde os pés.
 
 No simulador dá para reproduzir: `?sim=1&noise=0.04` (4% de ruído).

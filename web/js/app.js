@@ -6,7 +6,7 @@ import { World } from './world.js';
 import { Character } from './character.js';
 import { Pad, B } from './gamepad.js';
 import { Link } from './net.js';
-import { TouchControls } from './touch.js';
+import { Hud } from './hud.js';
 import { scoreOrientation } from '/shared/depth.js';
 
 const $ = (s) => document.querySelector(s);
@@ -69,7 +69,6 @@ btnAr.onclick = () => {
       : 'Não deu para abrir a câmera: ' + e.message;
   });
 };
-$('#btn-exit').onclick = () => { if (G.session) G.session.end(); else location.href = location.pathname; };
 if (SIM) startSim().catch((e) => { console.error(e); $('#why').textContent = 'Falha no simulador: ' + e.message; });
 
 // ------------------------------------------------------------------ estado global do jogo
@@ -113,7 +112,9 @@ async function boot() {
 
   Object.assign(G, { renderer, scene, camera, world, char, avatar, sun });
   buildOverlays();
-  G.touch = new TouchControls($('#hud'), pad);
+  G.hud = new Hud($('#hud'), pad, { onExit: () => { if (G.session) G.session.end(); else location.href = location.pathname; } });
+  G.hud.size(fmtSize(cfg.height));
+  char.onRespawn = () => toast('Voltou para o último lugar seguro');
   addEventListener('resize', () => {
     if (renderer.xr.isPresenting) return;
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
@@ -158,7 +159,7 @@ async function startAR() {
   // toque na tela (fora dos botões) coloca o avatar onde a câmera mira
   session.addEventListener('select', () => { if (!G.placed) place(); });
   session.addEventListener('end', () => location.reload());
-  hint('Mova o celular devagar sobre a mesa ou o chão. Quando o alvo aparecer, toque em “Colocar aqui”');
+  hint('Mova o celular devagar sobre a mesa ou o chão');
   renderer.setAnimationLoop(onXRFrame);
 }
 
@@ -182,8 +183,21 @@ function onXRFrame(t, frame) {
         const up = new THREE.Vector3(_m.elements[4], _m.elements[5], _m.elements[6]);
         if (up.y > 0.75) {
           G.reticleHit = new THREE.Vector3().setFromMatrixPosition(_m);
+          G.centerHit = hits[0];
           G.world.addPlaneHeight(G.reticleHit.y);
         }
+      }
+    }
+    // âncora do ARCore: quando o rastreamento se corrige, o ponto físico onde o avatar foi colocado
+    // "anda" no espaço de referência — o avatar acompanha, ficando preso à mesa de verdade
+    if (G.anchor && frame.trackedAnchors?.has(G.anchor.a)) {
+      const ap = frame.getPose(G.anchor.a.anchorSpace, ref);
+      if (ap) {
+        const m = ap.transform.matrix;
+        const dx = m[12] - G.anchor.last.x, dy = m[13] - G.anchor.last.y, dz = m[14] - G.anchor.last.z;
+        const d = Math.hypot(dx, dy, dz);
+        if (d > 0.002 && d < 0.15) G.char.shift(dx, dy, dz);
+        G.anchor.last.set(m[12], m[13], m[14]);
       }
     }
     // pontos de superfície da grade de hit-test (reforça o mapa)
@@ -222,13 +236,14 @@ function calibrateDepth(f) {
     const [ea, eb] = scoreOrientation(f, r.y, r.x, r.z);
     if (Number.isFinite(ea) || Number.isFinite(eb)) {
       cal.n++;
-      if (ea < eb) cal.a++; else cal.b++;
+      // só conta voto para "invertido" com evidência forte (erro bem menor e o normal claramente ruim)
+      if (eb < ea * 0.4 && ea > 0.04) cal.b++; else cal.a++;
       G.calErr = [ea, eb];
     }
   }
-  if (cal.n >= 6 || cal.tries > 150) {
+  if (cal.n >= 8 || cal.tries > 120) {
     cal.done = true;
-    G.world.flipY = cal.b > cal.a;
+    G.world.flipY = cal.b >= 6;           // padrão: orientação normal (a que funcionou no 1º teste)
     console.info('[depth] orientação', G.world.flipY ? 'invertida' : 'normal', cal, G.calErr);
   }
   return cal.done;
@@ -259,7 +274,7 @@ async function startSim() {
   G.sim = sim;
   G.world.occlusion = false;          // e já se oculta sozinho (no AR o fundo é a câmera)
   G.world.setFloor(0);
-  hint('Simulador: mire na mesa (centro da tela) e toque em “Colocar aqui” (ou Espaço) · arraste para girar');
+  hint('Simulador: mire na mesa e toque em “Colocar aqui” (ou Espaço) · arraste para girar a câmera');
   const clock = new THREE.Clock();
   let lastDepth = -1;
   // ?noise=0.04 simula depth ruidoso de aparelho real (fração da distância)
@@ -291,8 +306,13 @@ function buildOverlays() {
   const { scene } = G;
   const accent = 0xd9e27a;
   // retícula
-  const ret = new THREE.Mesh(new THREE.RingGeometry(0.035, 0.045, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false }));
-  ret.renderOrder = 20; ret.visible = false; scene.add(ret); G.reticle = ret;
+  const retMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthTest: false });
+  const ret = new THREE.Group();
+  ret.add(new THREE.Mesh(new THREE.RingGeometry(0.04, 0.048, 48).rotateX(-Math.PI / 2), retMat));
+  ret.add(new THREE.Mesh(new THREE.CircleGeometry(0.006, 16).rotateX(-Math.PI / 2), retMat));
+  ret.children.forEach((m) => { m.renderOrder = 20; });
+  ret.visible = false; scene.add(ret); G.reticle = ret; G.reticleMat = retMat;
+  G.retSmooth = new THREE.Vector3(); G.retHist = [];
   // anéis do analógico (como no vídeo): faixa grande = alcance, anel pequeno = posição do stick
   const ringMat = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.35, depthWrite: false });
   const knobMat = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.9, depthWrite: false });
@@ -336,9 +356,7 @@ function tick(t) {
   const { world, char } = G;
   world.sync(SIM ? 4000 : 350);
 
-  // retícula
-  G.reticle.visible = !!G.reticleHit && (!G.placed || pad.held(B.R3));
-  if (G.reticleHit) G.reticle.position.copy(G.reticleHit).y += 0.002;
+  updateReticle(dt);
 
   // eixos relativos à câmera, no plano do chão
   _fwd.copy(G.camFwd).setY(0);
@@ -348,6 +366,7 @@ function tick(t) {
 
   handleGlobalButtons();
   if (!G.placed) {
+    updatePreview(dt);
     if (pad.pressed(B.CROSS)) place();
   } else {
     handleButtons();
@@ -358,23 +377,81 @@ function tick(t) {
   updateStick(dt);
   updateTrail();
   updateShadows();
-  if (G.toastT > 0 && (G.toastT -= dt) <= 0) $('#toast').classList.remove('show');
+  G.hud.tick(dt);
+  updateArrow();
+  if (G.placed && (G.floorT = (G.floorT || 0) + dt) > 1) {
+    G.floorT = 0;
+    if (G.world.floorFromPlanes(G.placeY)) console.info('[chão] plano real em', G.world.floorY.toFixed(3));
+  }
   if (t - G.lastHud > 300) { G.lastHud = t; updateHud(); }
   if (t - G.lastState > 100) { G.lastState = t; sendState(); }
 }
 
 function place() {
-  const p = G.reticleHit;
-  if (!p) { toast('Sem superfície no alvo — mova o celular devagar'); return; }
+  if (!G.reticleHit) { toast('Mire numa mesa ou no chão'); return; }
+  const p = G.retSmooth.clone();
   spawnAt(p);
+  G.avatar.setGhost(false);
   G.avatar.root.visible = true;
   G.char.yaw = Math.atan2(G.camPos.x - p.x, G.camPos.z - p.z); // olhando para você
-  G.placed = true;
-  G.touch.setPlaced(true);
+  G.placed = true; G.placeY = p.y;
+  G.hud.setPlaced(true);
+  G.reticle.visible = false;
   G.char.playEmote('hi');
   hint('');
   pad.rumble(0.3, 0.6, 120);
+  anchorAt(p);
 }
+
+/** cria uma âncora do ARCore no ponto (o avatar fica preso ao lugar físico mesmo com correções do rastreamento) */
+function anchorAt(p) {
+  G.anchor?.a.delete?.();
+  G.anchor = null;
+  const hit = G.centerHit;
+  if (!G.session || !hit?.createAnchor) return;
+  hit.createAnchor().then((a) => { G.anchor = { a, last: p.clone() }; }).catch(() => { /* sem anchors: segue sem */ });
+}
+
+/** retícula suavizada; "estável" quando o alvo parou de tremer (melhor hora de colocar) */
+function updateReticle(dt) {
+  const r = G.reticleHit, show = !!r && (!G.placed || pad.held(B.R3));
+  G.reticle.visible = show;
+  if (!r) { G.retHist.length = 0; G.retStable = false; return; }
+  if (G.retHist.length === 0 || G.retSmooth.distanceTo(r) > 0.25) G.retSmooth.copy(r);
+  else G.retSmooth.lerp(r, Math.min(1, dt * 14));
+  G.retHist.push(r.clone()); if (G.retHist.length > 12) G.retHist.shift();
+  let spread = 0;
+  for (const h of G.retHist) spread = Math.max(spread, h.distanceTo(G.retSmooth));
+  G.retStable = G.retHist.length >= 8 && spread < 0.012;
+  G.reticle.position.copy(G.retSmooth).y += 0.002;
+  G.reticleMat.color.set(G.retStable ? 0xd9e27a : 0xffffff);
+  const s = 1 + Math.sin(performance.now() / 180) * (G.retStable ? 0 : 0.06);
+  G.reticle.scale.setScalar(s * Math.max(0.6, cfg.height / 0.25));
+}
+
+/** prévia translúcida do avatar no alvo antes de colocar: você vê exatamente onde e o tamanho */
+const _up = new THREE.Vector3(0, 1, 0);
+function updatePreview(dt) {
+  const a = G.avatar;
+  if (!G.reticleHit) { a.root.visible = false; return; }
+  a.setGhost(true);
+  a.root.visible = true;
+  a.root.position.copy(G.retSmooth);
+  a.root.quaternion.setFromAxisAngle(_up, Math.atan2(G.camPos.x - G.retSmooth.x, G.camPos.z - G.retSmooth.z));
+  a.update(dt);
+}
+
+/** seta na borda quando o avatar sai da tela */
+const _proj = new THREE.Vector3();
+function updateArrow() {
+  if (!G.placed) { G.hud.arrow(null); return; }
+  _proj.copy(G.char.position).y += G.char.height * 0.5;
+  _proj.project(G.camera);
+  const off = _proj.z > 1 || Math.abs(_proj.x) > 0.95 || Math.abs(_proj.y) > 0.95;
+  G.hud.arrow(off ? { x: _proj.x, y: _proj.y, z: _proj.z } : null);
+}
+
+function fmtSize(h) { return h >= 1 ? h.toFixed(2).replace('.', ',') + ' m' : Math.round(h * 100) + ' cm'; }
 
 /** nasce sempre EM CIMA do que existir no ponto (plano do ARCore ou voxels), nunca dentro */
 function spawnAt(p) {
@@ -383,7 +460,7 @@ function spawnAt(p) {
   const exclude = G.char.collider || null;
   const top = G.world.groundBelow(p.x, from, p.z, from - p.y + 0.1, exclude);
   // aceita a superfície encontrada se for coerente com o plano (ruído/objeto baixo); senão fica no plano
-  const y = top !== null && top > p.y - 0.05 && top < p.y + 0.2 ? Math.max(top, p.y) : p.y;
+  const y = top !== null && top > p.y - 0.03 && top < p.y + 0.03 ? Math.max(top, p.y) : p.y;
   G.char.spawn(new THREE.Vector3(p.x, y + 0.01, p.z), H);
 }
 
@@ -404,9 +481,13 @@ function handleButtons() {
     const k = pad.pressed(B.R1) ? 1.25 : 0.8;
     cfg.height = Math.round(THREE.MathUtils.clamp(char.height * k, 0.06, 2.0) * 100) / 100;
     char.resize(cfg.height); saveCfg();
-    toast(`Altura do avatar: ${cfg.height >= 1 ? cfg.height.toFixed(2).replace('.', ',') + ' m' : Math.round(cfg.height * 100) + ' cm'}`);
+    G.hud.size(fmtSize(cfg.height));
+    toast('Altura: ' + fmtSize(cfg.height));
   }
-  if (pad.pressed(B.R3) && G.reticleHit) { spawnAt(G.reticleHit); toast('Avatar trazido para o alvo'); }
+  if (pad.pressed(B.R3)) {
+    if (G.reticleHit) { const p = G.retSmooth.clone(); spawnAt(p); G.placeY = p.y; anchorAt(p); toast('Avatar trazido para o alvo'); }
+    else toast('Mire numa superfície para trazer o avatar');
+  }
 }
 
 /** botões que valem mesmo antes de colocar o avatar */
@@ -481,17 +562,23 @@ function updateShadows() {
 // ------------------------------------------------------------------ HUD e rede
 function chip(label, value, cls = '') { return `<span class="chip ${cls}">${label} <b>${value}</b></span>`; }
 function updateHud() {
-  // com o PS4 conectado os botões da tela somem (voltam se ele desconectar)
-  G.touch.visible = !pad.connected;
+  const { hud, world } = G;
+  // com o PS4 conectado o joystick/botões da tela somem (voltam se ele desconectar)
+  hud.touchVisible = !pad.connected;
+  if (!G.placed) {
+    if (!G.reticleHit) hud.status('search', 'Procurando superfície…');
+    else hud.status('ready', G.retStable ? 'Pronto — toque em Colocar aqui' : 'Segure firme um instante');
+  } else hud.status(G.fps < 24 ? 'warn' : 'ok', G.char.state === 'air' ? 'No ar' : 'No mundo');
+  hud.toggles({ malha: world.debug, oclusao: world.occlusion, rec: !!link.server.recording });
   const s = link.server;
-  $('#chips').innerHTML = [
+  hud.diag([
     chip('controle', pad.connected ? 'ok' : pad.source === 'teclado' ? 'teclado' : '—', pad.connected ? 'ok' : 'warn'),
     chip('depth', G.depthOk ? `${G.depthFrames}${G.world.flipY ? ' ↕' : ''}` : (G.session ? (cal.tries && !cal.done ? 'calibrando' : 'só planos') : '—'), G.depthOk ? 'ok' : 'warn'),
     chip('voxels', G.world.keys.length.toLocaleString('pt-BR')),
     chip('backend', link.ok ? (s.occupied ?? 0).toLocaleString('pt-BR') : 'offline', link.ok ? 'ok' : 'bad'),
     chip('fps', Math.round(G.fps)),
     s.recording ? '<span class="chip rec">● REC</span>' : '',
-  ].join('');
+  ].join(''));
 }
 
 function sendState() {
@@ -509,5 +596,5 @@ function sendState() {
   });
 }
 
-function toast(msg) { const el = $('#toast'); el.textContent = msg; el.classList.add('show'); G.toastT = 1.8; }
-function hint(msg) { $('#hint').textContent = msg; }
+function toast(msg) { G.hud?.toast(msg); }
+function hint(msg) { G.hud?.hint(msg); }

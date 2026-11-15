@@ -50,6 +50,31 @@ export class Character {
     this.position.copy(p);
   }
 
+  _embedded(x, y, z) {
+    const R = this.R;
+    // sonda pequena só na altura dos pés (2 a 6 cm num avatar de 25 cm): pega "chão ruidoso" que surgiu
+    // por cima dos pés, mas não paredes/objetos ao lado (a cápsula real nunca deixa encostar neles por dentro)
+    if (!this._probe || this._probeH !== this.height) {
+      this._probe = new R.Ball(this.radius * 0.5);
+      this._probeH = this.height;
+    }
+    const feetY = y - this.half - this.radius;
+    let hit = false;
+    this.world.physics.intersectionsWithShape({ x, y: feetY + this.radius, z }, { x: 0, y: 0, z: 0, w: 1 }, this._probe,
+      (c) => { if (!c.parent() || c.parent().isFixed()) { hit = true; return false; } return true; },
+      undefined, undefined, this.collider);
+    return hit;
+  }
+
+  /** desloca o personagem (correção da âncora do ARCore: o ponto físico "andou" no espaço de referência) */
+  shift(dx, dy, dz) {
+    if (!this.body) return;
+    const t = this.body.translation();
+    this.body.setTranslation({ x: t.x + dx, y: t.y + dy, z: t.z + dz }, true);
+    this.position.x += dx; this.position.y += dy; this.position.z += dz;
+    this.lastSafe.x += dx; this.lastSafe.y += dy; this.lastSafe.z += dz;
+  }
+
   resize(H) {
     const p = this.position.clone();
     this.spawn(p.add(new THREE.Vector3(0, 0.01, 0)), THREE.MathUtils.clamp(H, 0.06, 2.0));
@@ -113,15 +138,15 @@ export class Character {
     }
     this.position.set(nx, ny - H / 2 - 0.002, nz);
 
-    // destravar: querendo andar mas sem sair do lugar (cápsula presa dentro de voxels ruidosos)
-    const wantDist = Math.hypot(desired.x, desired.z), gotDist = Math.hypot(mv.x, mv.z);
-    if (input.mag > 0.3 && wantDist > 1e-5 && gotDist < wantDist * 0.15) this.stuck = (this.stuck || 0) + dt;
-    else this.stuck = 0;
-    if (this.stuck > 0.35) {
-      this.stuck = 0;
-      this.body.setNextKinematicTranslation({ x: nx, y: ny + 0.15 * H, z: nz });
-      this.position.y += 0.15 * H;
-      this.vel.y = 0;
+    // destravar SÓ se a cápsula estiver enterrada na geometria (voxel ruidoso surgiu dentro dela).
+    // Encostar numa parede/caixa não conta: a cápsula de teste é menor que a real.
+    if ((this.checkT = (this.checkT || 0) + dt) > 0.25) {
+      this.checkT = 0;
+      if (this._embedded(nx, ny, nz)) {
+        this.body.setNextKinematicTranslation({ x: nx, y: ny + 0.12 * H, z: nz });
+        this.position.y += 0.12 * H;
+        this.vel.y = Math.max(0, this.vel.y);
+      }
     }
 
     if (this.grounded) {
@@ -144,7 +169,7 @@ export class Character {
 
     // caiu da mesa e sumiu no vazio (chão não mapeado): volta para o último lugar seguro
     const floorY = Number.isFinite(this.world.minY) ? this.world.minY - 2.5 : this.lastSafe.y - 3;
-    if (this.position.y < floorY) this.spawn(this.lastSafe.clone().add(new THREE.Vector3(0, 0.05, 0)));
+    if (this.position.y < floorY) { this.spawn(this.lastSafe.clone().add(new THREE.Vector3(0, 0.05, 0))); this.onRespawn?.(); }
 
     this._animate(dt, hs / H);
     this.avatar.update(dt);

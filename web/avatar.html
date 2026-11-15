@@ -41,7 +41,7 @@ const floor = new THREE.Mesh(new THREE.CircleGeometry(2, 48), new THREE.MeshStan
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 scene.add(new THREE.AxesHelper(0.5));
 
-const avatar = await loadAvatar('./assets/avatar.json', { height: 1.75 });
+const avatar = await loadAvatar('./assets/avatar.json', { height: 1.75, silhouette: false });
 scene.add(avatar.root);
 const list = document.getElementById('list');
 const names = Object.keys(avatar.data.anims);

@@ -128,7 +128,7 @@ const camPos = new THREE.Vector3();
 
 // ------------------------------------------------------------ avatar e objetos (espelho do celular)
 let avatar = null;
-loadAvatar('./assets/avatar.json', { height: 0.25 }).then((a) => { avatar = a; a.root.visible = false; scene.add(a.root); }).catch(console.warn);
+loadAvatar('./assets/avatar.json', { height: 0.25, silhouette: false }).then((a) => { avatar = a; a.root.visible = false; scene.add(a.root); }).catch(console.warn);
 const propMeshes = [];
 const boxGeo = new THREE.BoxGeometry(1, 1, 1), ballGeo = new THREE.SphereGeometry(1, 16, 12);
 const propMat = { box: new THREE.MeshStandardMaterial({ color: 0xd9e27a }), ball: new THREE.MeshStandardMaterial({ color: 0xe8ff6a }) };

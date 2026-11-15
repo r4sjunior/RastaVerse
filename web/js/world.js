@@ -155,6 +155,18 @@ export class World {
     if (y < this.minY) this.minY = y;
   }
 
+  /**
+   * chão de verdade = plano horizontal mais confirmado pelo ARCore pelo menos 30 cm abaixo de refY
+   * (a mesa onde o avatar está). Corrige a estimativa do 'local-floor', que pode errar dezenas de cm
+   * e fazer o avatar cair "dentro" do chão real (e sumir pela oclusão).
+   */
+  floorFromPlanes(refY) {
+    let best = null;
+    for (const p of this.planes) if (p.n >= 6 && p.y < refY - 0.3 && (!best || p.n > best.n)) best = p;
+    if (best && (this.floorY === undefined || Math.abs(best.y - this.floorY) > 0.015)) { this.setFloor(best.y); return true; }
+    return false;
+  }
+
   /** raio para baixo: altura do chão sob (x,z), ignorando um colisor */
   groundBelow(x, y, z, maxDist = 3, exclude = null) {
     const ray = new this.R.Ray({ x, y, z }, { x: 0, y: -1, z: 0 });
