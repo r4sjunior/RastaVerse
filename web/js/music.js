@@ -5,6 +5,9 @@ const APP = 'RastaMEMR';
 const PLAYLIST_ID = 'E2p9r';
 const PLAYLIST_URL = 'https://audius.co/digitaldubs/playlist/cryptorastas-family-playlist';
 const VOLUME = 0.32;
+// 0,1 s de silêncio: tocado DENTRO do toque do usuário, libera o <audio> no iPhone para as faixas que
+// chegam depois (a lista vem da rede, e aí o gesto já passou)
+const SILENCE = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
 
 let enabled = true;
 try { enabled = localStorage.getItem('rastame.music') !== '0'; } catch { /* sem storage */ }
@@ -51,9 +54,11 @@ class Music {
       this.audio = new Audio();
       this.audio.preload = 'auto';
       this.audio.volume = VOLUME;
-      this.audio.addEventListener('ended', () => this.next());
-      this.audio.addEventListener('error', () => { if (++this.fails < 5) this.next(); });
+      this.audio.addEventListener('ended', () => { if (this.i >= 0) this.next(); });
+      this.audio.addEventListener('error', () => { if (this.i >= 0 && ++this.fails < 5) this.next(); });
       this.audio.addEventListener('playing', () => { this.fails = 0; });
+      this.audio.src = SILENCE;
+      this.audio.play().catch(() => {});
     }
     await this._load();
     if (this.tracks.length) this.next();

@@ -38,5 +38,6 @@ export const sfx = {
   tick() { tone(880, 0.05, { type: 'sine', vol: 0.06 }); },
   go() { tone(1320, 0.25, { type: 'sine', vol: 0.08 }); },
   fail() { tone(300, 0.25, { type: 'sawtooth', vol: 0.05, slide: -150 }); },
+  warp() { tone(220, 1.0, { type: 'sawtooth', vol: 0.04, slide: 1400 }); tone(330, 1.1, { type: 'sine', vol: 0.07, slide: 1800, delay: 0.05 }); tone(1760, 0.35, { type: 'triangle', vol: 0.06, delay: 0.95 }); },
   win() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.18, { type: 'square', vol: 0.05, delay: i * 0.1 })); },
 };

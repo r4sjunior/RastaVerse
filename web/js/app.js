@@ -10,6 +10,8 @@ import { Hud } from './hud.js';
 import { Games } from './games.js';
 import { sfx } from './sfx.js';
 import { music } from './music.js';
+import { CamView, CAM_H } from './camview.js';
+import { Portals } from './portals.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -65,19 +67,22 @@ function setCheck(id, state, text) {
   const el = $(id); el.className = 'check ' + state; el.querySelector('em').textContent = text;
 }
 let xrSupported = false;
+let camMode = false;            // sem WebXR AR (iPhone, Android sem ARCore): câmera + giroscópio
 const btnAr = $('#btn-ar');
 btnAr.disabled = true;
 (async () => {
   let why = '';
   if (!window.isSecureContext) why = 'Abra pelo link https:// do app.';
-  else if (!navigator.xr) why = 'Abra este link no Google Chrome de um celular Android.';
+  else if (!navigator.xr) why = 'Abra este link no celular.';
   else {
     xrSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
     if (!xrSupported) why = 'Este aparelho ainda não tem realidade aumentada. Instale/atualize o “Google Play Services for AR” e abra no Chrome.';
   }
-  setCheck('#ck-xr', xrSupported ? 'ok' : 'bad', xrSupported ? 'pronto' : why);
+  if (!xrSupported && CamView.available()) { camMode = true; why = ''; }
+  const ok = xrSupported || camMode;
+  setCheck('#ck-xr', ok ? 'ok' : 'bad', ok ? 'pronto' : why);
   btnAr.disabled = false;
-  if (!xrSupported) { btnAr.disabled = true; setBtn('Disponível no Chrome do Android'); $('#why').textContent = why; $('#cam-note').hidden = true; }
+  if (!ok) { btnAr.disabled = true; setBtn('Abra no celular'); $('#why').textContent = why; $('#cam-note').hidden = true; }
 })();
 const startTimer = setInterval(() => pad.poll(), 300);
 
@@ -135,6 +140,19 @@ startPreview();
 btnAr.onclick = async () => {
   sfx.unlock();
   music.start();                 // trilha CryptoRastas (precisa do toque do usuário)
+  if (camMode) {
+    // permissões pedidas JÁ no toque (o iOS exige o gesto do usuário para o giroscópio)
+    const req = CamView.request();
+    btnAr.disabled = true; setBtn('Abrindo a câmera…');
+    startCam(req).catch((e) => {
+      console.error(e);
+      btnAr.disabled = false; setBtn('Entrar no mundo');
+      $('#why').textContent = /denied|permission|NotAllowed/i.test(e.name + e.message)
+        ? 'Precisamos da câmera para colocar o avatar no seu mundo. Toque de novo e permita o acesso.'
+        : 'Não deu para abrir a câmera: ' + e.message;
+    });
+    return;
+  }
   if (!xrSupported) return;
   btnAr.disabled = true; setBtn('Abrindo a câmera…');
   await prepareLandscape();
@@ -202,7 +220,7 @@ async function boot() {
     onExit: () => { if (G.session) G.session.end(); else location.href = location.pathname; },
     onGame: (id) => {
       if (!G.placed) { toast('Coloque o avatar no mundo primeiro'); return; }
-      sfx.unlock(); G.games.start(id);
+      sfx.unlock(); G.portals.close(); G.games.start(id);
     },
     onAction: onHudAction,
   });
@@ -211,6 +229,7 @@ async function boot() {
     camPos: G.camPos, camFwd: G.camFwd,
   });
   char.onMantle = () => sfx.climb();
+  G.portals = new Portals({ scene, world, char, camPos: G.camPos, sfx, onEnter: enterPortal });
   music.onTrack = (title, artist) => toast('♪ ' + title + (artist ? ' — ' + artist : ''));
   G.hud.size(fmtSize(cfg.height));
   char.onRespawn = () => toast('Caiu onde a câmera não viu — mostre o chão para ele cair lá');
@@ -266,7 +285,10 @@ async function startAR() {
   // toque na tela (fora dos botões) coloca o avatar onde a câmera mira
   session.addEventListener('select', () => { if (!G.placed && G.phase !== 'scan') place(); });
   startScan();
-  session.addEventListener('end', () => { try { screen.orientation?.unlock?.(); } catch { /* ok */ } location.reload(); });
+  session.addEventListener('end', () => {
+    try { screen.orientation?.unlock?.(); } catch { /* ok */ }
+    if (G.leaving) location.href = G.leaving; else location.reload();
+  });
   hint('Mova o celular devagar sobre a mesa ou o chão');
   renderer.setAnimationLoop(onXRFrame);
 }
@@ -392,6 +414,53 @@ function readDepth(frame, view) {
   };
 }
 
+// ------------------------------------------------------------------ modo câmera (sem WebXR AR)
+/**
+ * Vídeo da câmera + giroscópio. O chão real é um plano a CAM_H abaixo do celular: o avatar anda, pula,
+ * empurra e pega objetos nele, e uma faixa de chão em volta do usuário vira mapa (minigames e portais).
+ */
+async function startCam(req) {
+  const stream = await req.video;
+  await req.motion;
+  await boot();
+  const cv = new CamView(G.camera);
+  await cv.start(stream);
+  G.cam = cv;
+  G.world.setFloor(0, 'guess');
+  G.floorGuess = 0;
+  seedCamFloor();
+  G.phase = 'place';
+  hint('Aponte para o chão e toque em “Colocar aqui”');
+  let last = performance.now();
+  G.renderer.setAnimationLoop((t) => {
+    const dt = Math.min(0.05, (t - last) / 1000); last = t;
+    cv.update(dt);
+    G.camPos.setFromMatrixPosition(G.camera.matrixWorld);
+    G.camera.getWorldDirection(G.camFwd);
+    const h = cv.floorAt(0, 0);
+    G.reticleHit = h ? (G._camHit || (G._camHit = new THREE.Vector3())).copy(h) : null;
+    if (G.reticleHit) G.world.addPlaneHeight(0);
+    tick(t);
+    G.renderer.render(G.scene, G.camera);
+  });
+}
+
+/** chão em volta do usuário vira voxels (como se escaneado): minigames e portais acham lugar nele */
+function seedCamFloor() {
+  const w = G.world, r = cfg.res, R = 2.4;
+  for (let pass = 0; pass < 3; pass++) {         // 3 leituras confirmam cada voxel
+    for (let x = -R; x <= R; x += r) {
+      for (let z = -R; z <= R; z += r) {
+        if (x * x + z * z > R * R) continue;
+        w.addSurfacePoint(x + r * 0.5, 0, z + r * 0.5);
+      }
+    }
+  }
+  w.flushSurface();
+  // a mensagem do worker só sai junto de um quadro de depth: manda um quadro vazio
+  w.ingestDepth({ data: new Uint16Array(1), width: 0, height: 0 }, 2, { ingest: false });
+}
+
 // ------------------------------------------------------------------ simulador (PC)
 async function startSim() {
   await boot();
@@ -500,6 +569,8 @@ function tick(t) {
   if (!G.placed) {
     if (G.phase === 'scan') G.avatar.root.visible = false;
     else { updatePreview(dt); if (pad.pressed(B.CROSS)) place(); }
+  } else if (G.portals.update(dt)) {
+    // sendo levado pelo portal: o avatar não responde aos comandos
   } else {
     handleButtons();
     // sem rastreamento a direção da câmera não é confiável: o avatar fica parado (a física continua)
@@ -530,6 +601,7 @@ function tick(t) {
  * uma grade circular com um anel brilhante marca a "linha do chão" no mundo real.
  */
 function startScan() {
+  if (G.cam) return;
   G.phase = 'scan';
   G.scanWasDebug = G.world.debug;
   G.world.debug = true;
@@ -610,7 +682,8 @@ function onHudAction(a) {
   else if (a === 'mute') { sfx.muted = !sfx.muted; toast(sfx.muted ? 'Efeitos desligados' : 'Efeitos ligados'); }
   else if (a === 'music') toast(music.toggle() ? 'Música ligada' : 'Música desligada');
   else if (a === 'nextTrack') { if (!music.enabled) music.toggle(); else if (!music.started) music.start(); else music.next(); }
-  else if (a === 'stopGame') G.games.stop();
+  else if (a === 'stopGame') { G.games.stop(); if (G.portals.active) { G.portals.close(); G.hud.game(null); } }
+  else if (a.startsWith('portal:')) openPortals(a.slice(7));
   else if (a === 'clearProps') {
     // remove bolas/caixas soltas (as do minigame em andamento ficam)
     const keep = new Set(G.games.bodies.map((b) => b.prop).filter(Boolean));
@@ -619,6 +692,28 @@ function onHudAction(a) {
     toast('Objetos removidos');
   }
   else if (a === 'again') G.games.again();
+}
+
+function openPortals(id) {
+  if (!G.placed) { toast('Coloque o avatar no mundo primeiro'); return; }
+  if (G.leaving) return;
+  G.games.stop();
+  G.portals.open(id);
+  G.hud.game({ title: id === 'all' ? 'Portais' : 'Portal', score: 'Leve o avatar até o portal', time: '' });
+  sfx.gate();
+}
+
+/** avatar entrou no portal: clarão e vai para o outro jogo */
+function enterPortal(url, dest) {
+  if (G.leaving) return;
+  G.leaving = url;
+  G.hud.flash('#' + dest.c1.toString(16).padStart(6, '0'));
+  G.hud.game({ title: dest.name, score: 'Entrando…', time: '' });
+  music.audio?.pause();
+  setTimeout(() => {
+    if (G.session) { G.session.end().catch(() => { location.href = url; }); setTimeout(() => { location.href = url; }, 1500); }
+    else location.href = url;
+  }, 900);
 }
 
 function place() {

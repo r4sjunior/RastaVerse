@@ -278,6 +278,30 @@ button { font: inherit; }
 .h-gcards em { font-style: normal; font-size: 11.5px; color: var(--accent); }
 .h-gcards em:empty { display: none; }
 
+/* portais RastaVerse */
+.h-mhead { margin-top: 18px; }
+.h-pcards { display: grid; gap: 8px; }
+.h-pcards button { border-radius: 16px; border: 1px solid rgba(46, 230, 168, .3) !important;
+  background: linear-gradient(120deg, rgba(46, 230, 168, .1), rgba(176, 92, 255, .1)) !important; color: #f2f4e8; }
+.h-pall { display: flex; align-items: center; gap: 12px; text-align: left; padding: 12px 14px; border-color: rgba(217, 226, 122, .55) !important; }
+.h-pall i, .h-prow i { flex: none; display: grid; place-items: center; border-radius: 14px; background: rgba(0, 0, 0, .35); }
+.h-pall i { width: 48px; height: 48px; }
+#hud .h-pall i svg { width: 34px; height: 34px; }
+.h-pall span { display: grid; gap: 2px; }
+.h-pall b { font-size: 15px; }
+.h-pall small { font-size: 12px; color: #aeb1a6; line-height: 1.3; }
+.h-prow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.h-prow button { display: grid; justify-items: center; gap: 6px; padding: 10px 4px; }
+.h-prow i { width: 40px; height: 40px; }
+#hud .h-prow i svg { width: 28px; height: 28px; }
+.h-prow b { font-size: 12.5px; }
+.h-flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle, #fff 0%, var(--flash, #fff) 45%, rgba(0, 0, 0, .9) 100%); opacity: 0; }
+.h-flash.go { animation: hflash 1.4s ease-in forwards; }
+@keyframes hflash { 0% { opacity: 0; } 35% { opacity: .85; } 100% { opacity: 1; } }
+
+/* modo câmera: vídeo ao fundo */
+#camfeed { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+
 /* leque (segurar = 3 opções) */
 .h-act.has-radial u { position: absolute; bottom: 7%; left: 50%; transform: translateX(-50%); width: 18px; height: 4px; text-decoration: none;
   background: radial-gradient(circle, #fff 1.5px, transparent 2px) 0 50% / 6px 4px repeat-x; opacity: .7; }

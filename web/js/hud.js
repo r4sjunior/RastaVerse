@@ -2,6 +2,10 @@
 // minigames (placar, contagem, resultado) e seta para o avatar fora da tela.
 // Tudo alimenta o mesmo Pad do controle PS4 (botões virtuais): toque e PS4 funcionam juntos.
 import { B } from './gamepad.js';
+import { DESTS } from './portals.js';
+
+/** ícone de portal (anel com redemoinho) na cor do jogo de destino */
+const portalIcon = (c1, c2) => `<svg viewBox="0 0 24 24"><defs><radialGradient id="pg${c1}"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#${c2.toString(16).padStart(6, '0')}"/><stop offset="1" stop-color="#${c1.toString(16).padStart(6, '0')}"/></radialGradient></defs><ellipse cx="12" cy="11" rx="7.2" ry="8.6" fill="url(#pg${c1})"/><ellipse cx="12" cy="11" rx="7.2" ry="8.6" fill="none" stroke="#${c1.toString(16).padStart(6, '0')}" stroke-width="2"/><path d="M12 6.5c2.6 0 3.4 3.4 1.2 4.6-1.6.9-3.2-.8-2-2" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" opacity=".85"/><ellipse cx="12" cy="21.3" rx="6" ry="1.2" fill="#${c1.toString(16).padStart(6, '0')}" opacity=".55"/></svg>`;
 
 const ICON = {
   jump: '<svg viewBox="0 0 24 24"><path d="M12 4l7 8h-4v8H9v-8H5z"/></svg>',
@@ -78,6 +82,7 @@ export class Hud {
       </div>
 
       <div class="h-radial" hidden></div>
+      <div class="h-flash" hidden></div>
       <div class="h-arrow" hidden>${ICON.arrow}</div>
 
       <div class="h-result" hidden>
@@ -93,7 +98,12 @@ export class Hud {
       <div class="h-gsheet" hidden>
         <div class="h-sheet-in">
           <div class="h-grab"></div>
-          <div class="h-ghead"><b>Minigames</b><small>Tudo acontece na sua mesa e no seu chão de verdade</small></div>
+          <div class="h-ghead"><b>Portais RastaVerse</b><small>Leve o avatar até um portal para entrar em outro jogo</small></div>
+          <div class="h-pcards">
+            <button class="h-pall" data-portal="all"><i>${portalIcon(0xd9e27a, 0x2ee6a8)}</i><span><b>Abrir os 3 portais</b><small>Entre andando no portal do jogo que quiser</small></span></button>
+            <div class="h-prow">${Object.entries(DESTS).map(([id, d]) => `<button data-portal="${id}"><i>${portalIcon(d.c1, d.c2)}</i><b>${d.name}</b></button>`).join('')}</div>
+          </div>
+          <div class="h-ghead h-mhead"><b>Minigames</b><small>Tudo acontece na sua mesa e no seu chão de verdade</small></div>
           <div class="h-gcards">${GAMES.map((g, i) => `<button data-game="${g.id}"><i>${GAME_ICON[g.id] || ''}</i><span><b>${g.name}</b><small>${g.desc}</small><em data-best="${g.id}"></em></span></button>`).join('')}</div>
         </div>
       </div>
@@ -144,6 +154,9 @@ export class Hud {
     }
     for (const btn of root.querySelectorAll('button[data-game]')) {
       btn.addEventListener('click', () => { buzz(10); this.menu(false); this.games(false); onGame?.(btn.dataset.game); });
+    }
+    for (const btn of root.querySelectorAll('button[data-portal]')) {
+      btn.addEventListener('click', () => { buzz(12); this.games(false); onAction?.('portal:' + btn.dataset.portal); });
     }
     q('[data-menu]').addEventListener('click', () => this.menu(q('.h-sheet').hidden));
     q('[data-open-games]').addEventListener('click', () => { buzz(10); this.games(true); });
@@ -326,6 +339,13 @@ export class Hud {
     if (heading !== null) this.el.needle.setAttribute('transform', `rotate(${(heading * 180 / Math.PI).toFixed(1)} 50 50)`);
     this.el.scanDone.disabled = !canFinish;
     this.el.scanDone.classList.toggle('ready', progress >= 1);
+  }
+
+  /** clarão de tela cheia (entrada no portal) */
+  flash(color = '#ffffff') {
+    const f = this.root.querySelector('.h-flash');
+    f.style.setProperty('--flash', color);
+    f.hidden = false; f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
   }
 
   // ---------------- minigames

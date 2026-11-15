@@ -154,6 +154,21 @@ preenchimento de buracos dentro de planos (sombra atrás de objetos), sem fechar
   tocada pela API pública do Audius (`web/js/music.js`), lida ao vivo e embaralhada; menu ⋯ › Música / Próxima.
 - Pose de carregar corrigida: braços à frente (antes iam para trás).
 
+## Portais RastaVerse
+
+No painel **Jogos**, seção **Portais**: abre um portal 3D (ou os 3) em volta do avatar, sempre no chão
+nivelado com ele. Leve o avatar até um portal: ele é sugado (giro, clarão, som) e o app vai para o jogo —
+[Rasta Memo](https://rastamemo.vercel.app/), [Rasta Runner](https://rastarunner.vercel.app/),
+[Rastetris](https://rastetris.vercel.app/). Destinos, cores e nomes ficam em `DESTS` (`web/js/portals.js`).
+
+## Aparelhos sem WebXR AR (iPhone, Android sem ARCore)
+
+`web/js/camview.js`: câmera traseira em vídeo ao fundo + giroscópio (DeviceOrientation, com o pedido de
+permissão do iOS feito no toque de "Entrar no mundo"). O chão real é um plano 1,35 m abaixo do celular
+(`CAM_H`), mapeado num raio de 2,4 m em volta do usuário — avatar, objetos, minigames e portais funcionam
+nele. Sem posição do celular (só rotação) e sem mesa/depth: o avatar fica no chão. A música libera o
+`<audio>` no próprio toque (exigência do Safari).
+
 ## Fluidez (revisão de desempenho)
 
 Medido no simulador com CPU 4× mais lenta, avatar andando (física + movimento por quadro):
