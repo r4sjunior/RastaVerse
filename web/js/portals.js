@@ -42,6 +42,8 @@ function label(text, color) {
   return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
 }
 
+const _a = new THREE.Vector3(), _b = new THREE.Vector3();
+
 export class Portals {
   /** ctx: { scene, world, char, camPos, onEnter(url, dest), sfx } */
   constructor(ctx) {
@@ -60,30 +62,48 @@ export class Portals {
     if (!char.body) return false;
     const want = ids === 'all' ? Object.keys(DESTS) : [ids];
     const H = char.height, p = char.position;
+    this.openPos = p.clone(); this.moved = false;
     const R = 0.5 * H;                                     // raio do anel (um pouco mais alto que o avatar)
     // de frente para a câmera, do lado de lá do avatar (fica visível na tela)
     const base = Math.atan2(p.x - camPos.x, p.z - camPos.z);
-    const angs = want.length === 1 ? [0, 40, -40, 80, -80, 130, -130, 180] : [0, -48, 48, -96, 96, 150, -150, 180, -24, 24];
-    const dists = [1.9 * H, 1.45 * H, 1.1 * H, 2.4 * H];
+    // direções em ordem de preferência (atrás do avatar, depois para os lados, por último para a câmera)
+    const angs = [0, -30, 30, -60, 60, -90, 90, -120, 120, -150, 150, 180];
+    // superfície na mesma altura do avatar (dá para chegar andando)
+    const level = (x, z) => {
+      const gy = world.groundBelow(x, p.y + H * 0.6, z, H * 1.4, char.collider);
+      return gy !== null && Math.abs(gy - p.y) <= H * 0.15 ? gy : null;
+    };
+    // o lugar precisa de chão no centro, em volta (o círculo de luz inteiro) e no caminho até o avatar —
+    // antes um portal podia nascer além da borda da mesa, no ar, onde o avatar nunca chegava
+    const fits = (x, z) => {
+      const gy = level(x, z);
+      if (gy === null) return null;
+      for (let k = 0; k < 4; k++) {
+        const a = k * Math.PI / 2;
+        if (level(x + Math.cos(a) * R * 0.8, z + Math.sin(a) * R * 0.8) === null) return null;
+      }
+      for (const f of [0.35, 0.65]) if (level(p.x + (x - p.x) * f, p.z + (z - p.z) * f) === null) return null;
+      return gy;
+    };
     const used = [];
-    for (const id of want) {
-      let spot = null;
-      search: for (const d of dists) {
+    const find = (dists, sep) => {
+      for (const d of dists) {
         for (const a of angs) {
           const ang = base + a * Math.PI / 180;
           const x = p.x + Math.sin(ang) * d, z = p.z + Math.cos(ang) * d;
-          if (used.some((u) => Math.hypot(u.x - x, u.z - z) < R * 2.3)) continue;
-          // chão na mesma altura do avatar (dá para chegar andando)
-          const gy = world.groundBelow(x, p.y + H * 0.6, z, H * 1.4, char.collider);
-          if (gy === null || Math.abs(gy - p.y) > H * 0.12) continue;
-          spot = new THREE.Vector3(x, gy, z);
-          break search;
+          if (used.some((u) => Math.hypot(u.x - x, u.z - z) < sep)) continue;
+          const gy = fits(x, z);
+          if (gy !== null) return new THREE.Vector3(x, gy, z);
         }
       }
-      if (!spot) {                                         // sem espaço livre: perto do avatar mesmo assim
-        const ang = base + (used.length ? (used.length % 2 ? -1 : 1) * 60 : 0) * Math.PI / 180;
-        spot = new THREE.Vector3(p.x + Math.sin(ang) * 1.4 * H, p.y, p.z + Math.cos(ang) * 1.4 * H);
-      }
+      return null;
+    };
+    // avatar grande (tamanho real, no chão): portais a no máximo ~1,5 m dele, não a 3 m
+    const cap = (ds) => ds.map((d) => Math.min(d, R * 1.8 + 0.6));
+    for (const id of want) {
+      const spot = find(cap([1.7 * H, 1.3 * H, 2.2 * H]), R * 2.3)
+        || find(cap([1.0 * H, 0.8 * H, 2.8 * H]), R * 1.7)       // mesa pequena: mais perto e mais juntos
+        || new THREE.Vector3(p.x, p.y, p.z);                     // sem lugar nenhum: no próprio avatar (ver "armed")
       used.push(spot);
       this.list.push(this._build(id, spot, R));
     }
@@ -122,7 +142,7 @@ export class Portals {
     tag.scale.set(R * 1.9, R * 0.475, 1); tag.position.y = R * 2.45; g.add(tag);
     g.scale.setScalar(0.001);
     this.ctx.scene.add(g);
-    return { id, dest: D, g, ring, swirlMat, sparks, glow, R, born: this.t, seed: Math.random() * 10 };
+    return { id, dest: D, g, ring, swirlMat, sparks, glow, R, born: this.t, seed: Math.random() * 10, armed: false, near: 0 };
   }
 
   close() {
@@ -151,7 +171,7 @@ export class Portals {
       const power = this.warp?.p === p ? Math.min(1, this.warp.t / 0.5) : 0;
       p.swirlMat.uniforms.uTime.value = this.t * (1 + power * 2);
       p.swirlMat.uniforms.uPower.value = power;
-      p.glow.material.opacity = 0.3 + Math.sin(this.t * 3 + p.seed) * 0.12 + power * 0.4;
+      p.glow.material.opacity = 0.3 + Math.sin(this.t * 3 + p.seed) * 0.12 + (p.near || 0) * 0.35 + power * 0.4;
       const a = p.sparks.geometry.attributes.position;
       for (let i = 0; i < a.count; i++) {
         const ang = i / a.count * Math.PI * 2 + this.t * (1.2 + (i % 3) * 0.5);
@@ -161,16 +181,38 @@ export class Portals {
       a.needsUpdate = true;
     }
     if (this.warp) return this._updateWarp(dt);
-    // entrou no portal?
+    // só depois que o avatar andou: nunca puxa sozinho um avatar parado logo que os portais abrem
+    if (!this.moved && this.openPos && Math.hypot(cp.x - this.openPos.x, cp.z - this.openPos.z) > H * 0.12) this.moved = true;
+    // entrou no portal? = pisou no círculo de luz do chão. Antes era preciso passar a ~10 cm do centro
+    // (com o portal de frente para a câmera, isso é andar "para dentro da tela", a direção mais difícil de
+    // acertar em AR): o avatar passava do lado/atrás e nada acontecia.
     for (const p of this.list) {
-      if (this.t - p.born < 0.6) continue;
       const gp = p.g.position;
-      if (Math.hypot(cp.x - gp.x, cp.z - gp.z) < p.R * 0.85 && Math.abs(cp.y - gp.y) < H * 0.5) {
+      const d = Math.hypot(cp.x - gp.x, cp.z - gp.z), dy = Math.abs(cp.y - gp.y);
+      if (d > p.R * 1.5) p.armed = true;                    // portal que nasceu em cima do avatar: só depois de sair
+      p.near = Math.max(0, 1 - Math.max(0, d - p.R * 1.15) / (p.R * 2));   // brilho aumenta ao chegar perto
+      if (this.t - p.born < 0.6 || !p.armed || !this.moved) continue;
+      if (dy < H * 0.6 && (d < p.R * 1.15 || (d < p.R * 2.2 && this._overlapOnScreen(p, cp, H)))) {
         this._startWarp(p);
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * Na tela, o avatar está "dentro" do redemoinho? Em AR é difícil julgar profundidade: quem vê o avatar
+   * sobre o portal espera que ele entre, mesmo uns centímetros à frente ou atrás. Mede pelo ângulo visto da
+   * câmera (centro do avatar dentro de 80% do disco) — junto com a distância curta checada antes.
+   */
+  _overlapOnScreen(p, cp, H) {
+    const cam = this.ctx.camPos;
+    _a.set(cp.x - cam.x, cp.y + H * 0.5 - cam.y, cp.z - cam.z);
+    p.ring.getWorldPosition(_b); _b.sub(cam);
+    const dist = _b.length();
+    if (dist < 1e-3) return false;
+    const ang = _a.angleTo(_b);
+    return ang < Math.atan((p.R * 0.8) / dist);
   }
 
   _startWarp(p) {

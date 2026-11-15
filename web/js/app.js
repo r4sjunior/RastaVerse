@@ -426,6 +426,7 @@ async function startCam(req) {
   const cv = new CamView(G.camera);
   await cv.start(stream);
   G.cam = cv;
+  if (params.has('test')) window.__rastame = G;   // testes automatizados
   G.world.setFloor(0, 'guess');
   G.floorGuess = 0;
   seedCamFloor();
@@ -699,7 +700,7 @@ function openPortals(id) {
   if (G.leaving) return;
   G.games.stop();
   G.portals.open(id);
-  G.hud.game({ title: id === 'all' ? 'Portais' : 'Portal', score: 'Leve o avatar até o portal', time: '' });
+  G.hud.game({ title: id === 'all' ? 'Portais' : 'Portal', score: 'Pise no círculo de luz do portal', time: '' });
   sfx.gate();
 }
 
