@@ -105,13 +105,34 @@ async function startPreview() {
   const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'low-power' });
   r.setPixelRatio(Math.min(devicePixelRatio, 2));
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xfff3e0, 0x2a2e35, 1.7));
-  const key = new THREE.DirectionalLight(0xffffff, 1.7); key.position.set(1.6, 2.4, 2.2); scene.add(key);
-  const rim = new THREE.DirectionalLight(0xd9e27a, 1.6); rim.position.set(-2, 1.4, -2.2); scene.add(rim);
+  // luz de "portal": céu frio, chão verde neon, key quente e dois contornos rasta (vermelho / verde)
+  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x0f3a24, 1.35));
+  const key = new THREE.DirectionalLight(0xfff1d6, 1.9); key.position.set(1.4, 2.4, 2.4); scene.add(key);
+  const rimR = new THREE.DirectionalLight(0xff2d55, 2.2); rimR.position.set(-2.2, 1.3, -1.6); scene.add(rimR);
+  const rimG = new THREE.DirectionalLight(0x00ff85, 2.0); rimG.position.set(2.2, 1.1, -1.8); scene.add(rimG);
+  const bounce = new THREE.PointLight(0xc8ff2e, 1.2, 1.6, 2); bounce.position.set(0, 0.06, 0.25); scene.add(bounce);
   const av = new VoxelAvatar(data, { height: 1, silhouette: false });
   scene.add(av.root);
+  // disco de luz sob os pés: um plano com textura radial gerada (sem shader, 1 draw call)
+  const tex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(200,255,46,1)'); gr.addColorStop(0.35, 'rgba(0,255,133,.55)'); gr.addColorStop(1, 'rgba(0,255,133,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  })();
+  const disc = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  disc.rotation.x = -Math.PI / 2; disc.position.y = 0.002; scene.add(disc);
   const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
   cam.position.set(0, 0.6, 2.55); cam.lookAt(0, 0.5, 0);
+  // parallax: dedo/mouse ou inclinação do celular movem a câmera um pouco (sensação de janela)
+  const par = { x: 0, y: 0, tx: 0, ty: 0 };
+  const onPtr = (e) => { par.tx = (e.clientX / innerWidth - 0.5) * 2; par.ty = (e.clientY / innerHeight - 0.5) * 2; };
+  const onTilt = (e) => { if (e.gamma == null) return; par.tx = Math.max(-1, Math.min(1, e.gamma / 30)); par.ty = Math.max(-1, Math.min(1, (e.beta - 45) / 30)); };
+  addEventListener('pointermove', onPtr, { passive: true });
+  addEventListener('deviceorientation', onTilt, { passive: true });
+  preview.off = () => { removeEventListener('pointermove', onPtr); removeEventListener('deviceorientation', onTilt); tex.dispose(); };
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const seq = ['hi', 'idle', 'danceCWalk', 'idle', 'cheer', 'danceShuffle', 'vibe'];
   let si = 0, nextAt = 0;
@@ -125,7 +146,14 @@ async function startPreview() {
     const w = canvas.clientWidth | 0;
     if (w && (canvas.width !== Math.round(w * r.getPixelRatio()))) r.setSize(w, w, false);
     if (!still && t > nextAt) { av.play(seq[si++ % seq.length], { fade: 0.3 }); nextAt = t + 3600; }
-    if (!still) av.root.rotation.y = Math.sin(t / 2600) * 0.55;
+    if (!still) {
+      av.root.rotation.y = Math.sin(t / 2600) * 0.55;
+      const beat = Math.max(0, Math.sin(t / 1600 * Math.PI * 2)) ** 8;   // pulso no mesmo ritmo do CSS (1,6 s)
+      disc.material.opacity = 0.7 + beat * 0.3; disc.scale.setScalar(1 + beat * 0.12);
+      bounce.intensity = 1 + beat * 0.8;
+      par.x += (par.tx - par.x) * Math.min(1, dt * 4); par.y += (par.ty - par.y) * Math.min(1, dt * 4);
+      cam.position.set(par.x * 0.28, 0.6 - par.y * 0.12, 2.55); cam.lookAt(0, 0.5, 0);
+    }
     av.update(still ? 0 : dt);
     r.render(scene, cam);
   };
@@ -133,6 +161,7 @@ async function startPreview() {
 }
 function stopPreview() {
   cancelAnimationFrame(preview.raf);
+  preview.off?.(); preview.off = null;
   if (preview.r) { preview.r.dispose(); preview.r.forceContextLoss(); preview.r = null; }
 }
 startPreview();

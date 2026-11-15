@@ -11,67 +11,166 @@ canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; t
 button { font: inherit; }
 [hidden] { display: none !important; }
 
-/* =================================================================== tela inicial */
-#start { position: relative; min-height: 100svh; overflow: hidden; isolation: isolate; background: #0b0d10;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-#start h1, #settings h2, #start .enter { font-family: "Space Grotesk", Inter, system-ui, sans-serif; }
+/* =================================================================== tela inicial — Cyber-Reggae / Neon Jungle */
+#start {
+  /* paleta da tela inicial (o HUD do jogo continua com as cores de :root) */
+  --void: #05060a; --void-2: #0a0d14; --void-3: #111623;
+  --neon-r: #ff2d55; --neon-y: #ffd60a; --neon-g: #00ff85; --neon-lime: #c8ff2e; --neon-cyan: #3cf0ff;
+  --ink: #0a0c05;                       /* texto escuro sobre neon */
+  --fg-hi: #f7f9f0; --fg-mid: #c3c9bb; --fg-lo: #858c80;
+  --glow-g: 0 0 18px rgba(0, 255, 133, .55); --glow-y: 0 0 22px rgba(255, 214, 10, .5);
+  --glass-s: rgba(255, 255, 255, .05); --glass-s-line: rgba(255, 255, 255, .12);
+  --f-display: "Chakra Petch", "Space Grotesk", Inter, system-ui, sans-serif;
 
-/* fundo: aurora rasta + chão em grade (clima de "mundo") */
-.aurora { position: absolute; inset: -20%; z-index: -2; filter: blur(60px); opacity: .55; }
-.aurora i { position: absolute; width: 55vmax; height: 55vmax; border-radius: 50%; mix-blend-mode: screen; animation: drift 18s ease-in-out infinite alternate; }
-.aurora i:nth-child(1) { background: radial-gradient(circle, rgba(200, 55, 45, .55), transparent 60%); left: -5%; top: 5%; }
-.aurora i:nth-child(2) { background: radial-gradient(circle, rgba(232, 194, 58, .45), transparent 60%); right: -10%; top: -10%; animation-delay: -6s; }
-.aurora i:nth-child(3) { background: radial-gradient(circle, rgba(63, 143, 58, .55), transparent 60%); left: 25%; bottom: -25%; animation-delay: -12s; }
-@keyframes drift { to { transform: translate(6%, -5%) scale(1.12); } }
-.floor-grid { position: absolute; left: -50%; right: -50%; bottom: -10%; height: 46%; z-index: -1; transform: perspective(420px) rotateX(62deg);
-  transform-origin: bottom; opacity: .35;
-  background-image: linear-gradient(rgba(217, 226, 122, .28) 1px, transparent 1px), linear-gradient(90deg, rgba(217, 226, 122, .28) 1px, transparent 1px);
-  background-size: 48px 48px; -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 90%); mask-image: linear-gradient(to top, #000 10%, transparent 90%); }
+  position: relative; min-height: 100svh; overflow: hidden; isolation: isolate; color: var(--fg-hi);
+  background: radial-gradient(120% 70% at 50% 38%, var(--void-3), var(--void-2) 45%, var(--void) 80%);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+#settings h2 { font-family: "Space Grotesk", Inter, system-ui, sans-serif; }
+/* vinheta + scanlines finíssimas (estático: custo zero por quadro) */
+#start::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(0, 0, 0, .7)),
+              repeating-linear-gradient(0deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 3px); }
 
-.hero { min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); text-align: center; }
+/* aurora: gradientes já são suaves, então sem filter: blur (era repintura cara no celular) */
+.aurora { position: absolute; inset: -25%; z-index: -3; opacity: .9; pointer-events: none; }
+.aurora i { position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; mix-blend-mode: screen; will-change: transform;
+  animation: drift 16s ease-in-out infinite alternate; }
+.aurora i:nth-child(1) { background: radial-gradient(circle, rgba(255, 45, 85, .38), transparent 62%); left: -18%; top: 4%; }
+.aurora i:nth-child(2) { background: radial-gradient(circle, rgba(255, 214, 10, .26), transparent 62%); right: -22%; top: -18%; animation-delay: -5s; }
+.aurora i:nth-child(3) { background: radial-gradient(circle, rgba(0, 255, 133, .32), transparent 62%); left: 12%; bottom: -34%; animation-delay: -10s; }
+@keyframes drift { to { transform: translate(7%, -6%) scale(1.15); } }
 
-/* portal com o avatar 3D */
-.portal { position: relative; width: clamp(190px, 52vmin, 320px); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center;
-  background: radial-gradient(circle at 50% 60%, rgba(217, 226, 122, .16), rgba(11, 13, 16, 0) 62%); }
-.portal::before { content: ""; position: absolute; inset: 6%; border-radius: 50%; padding: 2px;
-  background: conic-gradient(from 0deg, var(--rasta-r), var(--rasta-y), var(--rasta-g), var(--accent), var(--rasta-r));
+/* chão holográfico andando em direção à câmera (só transform, roda no compositor) */
+.floor-grid { position: absolute; left: -60%; right: -60%; bottom: -8%; height: 48%; z-index: -2; overflow: hidden; pointer-events: none;
+  transform: perspective(380px) rotateX(64deg); transform-origin: bottom;
+  -webkit-mask-image: linear-gradient(to top, #000 5%, transparent 85%); mask-image: linear-gradient(to top, #000 5%, transparent 85%); }
+.floor-grid::before { content: ""; position: absolute; left: 0; right: 0; top: -48px; bottom: 0; opacity: .55;
+  background-image: linear-gradient(rgba(0, 255, 133, .5) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 133, .35) 1px, transparent 1px);
+  background-size: 48px 48px; animation: grid-run 2.4s linear infinite; }
+@keyframes grid-run { to { transform: translateY(48px); } }
+
+.hero { min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); text-align: center; }
+
+/* ---------------------------------------------------------------- portal dimensional */
+.portal { position: relative; width: clamp(220px, 62vmin, 340px); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center;
+  /* interior escuro e fundo: parece um buraco para outro mundo, não um adesivo */
+  background: radial-gradient(circle at 50% 62%, rgba(0, 255, 133, .22), rgba(10, 13, 20, .2) 42%, rgba(5, 6, 10, .92) 68%, transparent 71%);
+  box-shadow: 0 0 60px 6px rgba(0, 255, 133, .14), 0 0 120px 20px rgba(255, 45, 85, .08);
+  animation: portal-in .9s cubic-bezier(.2, .9, .25, 1.2) backwards; }
+@keyframes portal-in { from { transform: scale(.6); opacity: 0; } }
+/* anel principal tricolor, girando, com brilho */
+.portal::before { content: ""; position: absolute; inset: 4%; border-radius: 50%; padding: 3px; z-index: 2; pointer-events: none;
+  background: conic-gradient(from 0deg, var(--neon-r), var(--neon-y) 33%, var(--neon-g) 66%, var(--neon-r));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  opacity: .75; animation: spin 14s linear infinite; }
-.portal::after { content: ""; position: absolute; left: 24%; right: 24%; bottom: 14%; height: 8%; border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(0, 0, 0, .65), transparent 70%); z-index: 0; }
+  filter: drop-shadow(0 0 6px rgba(255, 214, 10, .8)) drop-shadow(0 0 14px rgba(0, 255, 133, .5));
+  animation: spin 9s linear infinite; }
+/* disco de luz sob os pés do avatar (pulsa no ritmo one drop ~75 bpm) */
+.portal::after { content: ""; position: absolute; left: 26%; right: 26%; bottom: 12%; height: 9%; border-radius: 50%; z-index: 0;
+  background: radial-gradient(ellipse, rgba(200, 255, 46, .75), rgba(0, 255, 133, .25) 45%, transparent 72%);
+  animation: beat 1.6s ease-in-out infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes beat { 0%, 100% { transform: scale(1); opacity: .8; } 12% { transform: scale(1.18); opacity: 1; } }
+
+.portal-fx { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; }
+.portal-fx i { position: absolute; display: block; }
+/* redemoinho dentro do portal: profundidade */
+.portal-fx .vortex { inset: 10%; border-radius: 50%; opacity: .5;
+  background: repeating-conic-gradient(from 0deg, rgba(0, 255, 133, .28) 0 6deg, transparent 6deg 24deg, rgba(255, 214, 10, .18) 24deg 28deg, transparent 28deg 45deg);
+  -webkit-mask: radial-gradient(circle, transparent 18%, #000 45%, transparent 72%); mask: radial-gradient(circle, transparent 18%, #000 45%, transparent 72%);
+  animation: spin 22s linear infinite reverse; }
+/* anel tracejado de HUD girando ao contrário */
+.portal-fx .ring { inset: -1%; border-radius: 50%; padding: 1px; opacity: .7;
+  background: repeating-conic-gradient(rgba(60, 240, 255, .9) 0 2deg, transparent 2deg 12deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: spin 30s linear infinite reverse; }
+/* faíscas subindo do portal */
+.portal-fx .spark { bottom: 22%; width: 4px; height: 4px; border-radius: 50%; background: var(--neon-y); box-shadow: 0 0 8px 2px var(--neon-y);
+  opacity: 0; animation: rise 3.2s ease-out infinite; }
+.portal-fx .spark:nth-child(3) { left: 32%; }
+.portal-fx .spark:nth-child(4) { left: 62%; background: var(--neon-g); box-shadow: 0 0 8px 2px var(--neon-g); animation-delay: -1.1s; }
+.portal-fx .spark:nth-child(5) { left: 47%; background: var(--neon-r); box-shadow: 0 0 8px 2px var(--neon-r); animation-delay: -2.2s; }
+@keyframes rise { 0% { transform: translateY(0) scale(1); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(-130px) scale(.3); opacity: 0; } }
+
 #preview { position: relative; z-index: 1; width: 100%; height: 100%; border-radius: 50%; }
-.portal-fallback { position: absolute; z-index: 1; width: 30%; height: auto; image-rendering: pixelated; }
+.portal-fallback { position: absolute; z-index: 1; width: 30%; height: auto; image-rendering: pixelated; filter: drop-shadow(0 0 14px rgba(0, 255, 133, .5)); }
 .portal.live .portal-fallback { display: none; }
 
+/* ---------------------------------------------------------------- texto */
 .hero-copy { display: flex; flex-direction: column; align-items: center; max-width: 440px; }
-.eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 99px; font-size: 12px; font-weight: 600;
-  letter-spacing: .4px; color: #e9ecd2; background: rgba(217, 226, 122, .1); border: 1px solid rgba(217, 226, 122, .28); }
-.eyebrow b { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-.hero h1 { margin: 14px 0 0; font-size: clamp(44px, 13vmin, 72px); line-height: .95; letter-spacing: -1.5px; font-weight: 700;
-  background: linear-gradient(180deg, #ffffff 30%, #c9cbbf); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hero h1 span { background: linear-gradient(90deg, var(--rasta-y), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hero .tag { color: #b5b8ad; margin: 14px 0 0; font-size: 15.5px; line-height: 1.5; }
-.pills { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 0; margin: 16px 0 22px; }
-.pills li { font-size: 12.5px; font-weight: 500; padding: 6px 12px; border-radius: 99px; color: #dfe2d6; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .1); }
+.hero-copy > * { animation: rise-in .6s cubic-bezier(.2, .8, .2, 1) backwards; }
+.hero-copy > :nth-child(1) { animation-delay: .25s; } .hero-copy > :nth-child(2) { animation-delay: .32s; }
+.hero-copy > :nth-child(3) { animation-delay: .4s; }  .hero-copy > :nth-child(4) { animation-delay: .48s; }
+.hero-copy > :nth-child(5) { animation-delay: .56s; } .hero-copy > :nth-child(n+6) { animation-delay: .64s; }
+@keyframes rise-in { from { opacity: 0; transform: translateY(14px); } }
 
-.enter { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-  width: min(100%, 340px); padding: 19px 28px; border: 0; border-radius: 18px; cursor: pointer; font-size: 18px; font-weight: 700; color: #12140c;
-  background: linear-gradient(135deg, #e8f08f, var(--accent) 45%, #b9c95a); box-shadow: 0 12px 36px rgba(217, 226, 122, .28), inset 0 1px 0 rgba(255, 255, 255, .5); }
-.enter svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s; }
-.enter:hover svg { transform: translateX(3px); }
-.enter::after { content: ""; position: absolute; inset: 0; transform: translateX(-120%);
-  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .55) 50%, transparent 70%); animation: sheen 3.2s ease-in-out infinite 1s; }
-@keyframes sheen { 60%, 100% { transform: translateX(120%); } }
-.enter:active { transform: scale(.98); }
-.enter:disabled { opacity: .65; cursor: progress; }
-.enter:disabled::after { animation: none; }
-.cam { color: #8f9288; font-size: 12.5px; margin: 12px 0 0; }
-.why { color: var(--warn); font-size: 13px; min-height: 1em; margin: 6px 0 0; max-width: 360px; }
-.sub-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: #6f7269; font-size: 13px; }
-.link-btn { background: none; border: 0; padding: 6px 2px; color: #c9ccbf; font: 500 13px Inter, system-ui, sans-serif; text-decoration: none; cursor: pointer; border-bottom: 1px dashed rgba(255, 255, 255, .25); }
-.link-btn:hover { color: var(--accent); }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; padding: 5px 12px 5px 10px; font-size: 11px; font-weight: 600;
+  letter-spacing: 1.6px; text-transform: uppercase; color: var(--neon-g); background: rgba(0, 255, 133, .08);
+  border: 1px solid rgba(0, 255, 133, .35); clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
+.eyebrow b { width: 7px; height: 7px; border-radius: 50%; background: var(--neon-g); box-shadow: var(--glow-g); animation: blink 1.6s steps(2, jump-none) infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+
+/* título: itálico de jogo, "Rasta" branco com split cromático, "ME" ácido com brilho */
+.hero h1 { margin: 10px 0 0; font: italic 700 clamp(52px, 15vmin, 84px)/.9 var(--f-display); letter-spacing: -1px; color: var(--fg-hi);
+  text-shadow: -2px 0 rgba(255, 45, 85, .55), 2px 0 rgba(0, 255, 133, .45), 0 6px 30px rgba(0, 0, 0, .6); }
+.hero h1 span { display: inline-block; padding-right: .06em; color: transparent; text-shadow: none;
+  background: linear-gradient(100deg, var(--neon-y) 10%, var(--neon-lime) 55%, var(--neon-g) 95%); -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 0 14px rgba(200, 255, 46, .45)); }
+/* faixa tricolor sob o título */
+.hero h1::after { content: ""; display: block; width: 96px; height: 4px; margin: 12px auto 0; transform: skewX(-20deg);
+  background: linear-gradient(90deg, var(--neon-r) 0 33.3%, var(--neon-y) 33.3% 66.6%, var(--neon-g) 66.6%); box-shadow: 0 0 14px rgba(255, 214, 10, .5); }
+.hero .tag { color: var(--fg-mid); margin: 14px 0 0; max-width: 34ch; font-size: 15.5px; line-height: 1.5; }
+
+/* pills: chips de status de jogo com ponto colorido */
+.pills { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 0; margin: 16px 0 24px; }
+.pills li { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; font-size: 11.5px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase;
+  color: var(--fg-hi); background: var(--glass-s); border: 1px solid var(--glass-s-line); border-radius: 6px; }
+.pills li::before { content: ""; width: 6px; height: 6px; transform: rotate(45deg); background: var(--c, var(--neon-g)); box-shadow: 0 0 8px var(--c, var(--neon-g)); }
+.pills li:nth-child(1) { --c: var(--neon-r); } .pills li:nth-child(2) { --c: var(--neon-y); } .pills li:nth-child(3) { --c: var(--neon-g); }
+
+/* ---------------------------------------------------------------- botão principal (CTA de jogo) */
+.enter { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+  width: min(100%, 340px); min-height: 62px; padding: 18px 30px; border: 0; border-radius: 10px; cursor: pointer;
+  font: italic 700 19px/1 var(--f-display); letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink);
+  transform: skewX(-8deg); transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+  background: linear-gradient(100deg, var(--neon-y), var(--neon-lime) 55%, var(--neon-g));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .25) inset, 0 -3px 0 rgba(0, 0, 0, .25) inset, 0 10px 30px rgba(200, 255, 46, .35), 0 0 46px rgba(0, 255, 133, .25); }
+.enter > * { transform: skewX(8deg); }
+.enter svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s; }
+/* halo pulsante: chama o toque */
+.enter::before { content: ""; position: absolute; inset: -6px; z-index: -1; border-radius: 14px; border: 2px solid rgba(200, 255, 46, .6);
+  animation: halo 2s ease-out infinite; pointer-events: none; }
+@keyframes halo { 0% { opacity: .9; transform: scale(.96); } 100% { opacity: 0; transform: scale(1.12, 1.35); } }
+/* brilho atravessando */
+.enter::after { content: ""; position: absolute; inset: 0; border-radius: inherit; transform: translateX(-120%); pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .7) 50%, transparent 70%); animation: sheen 3s ease-in-out infinite 1.2s; }
+@keyframes sheen { 55%, 100% { transform: translateX(120%); } }
+.enter:hover { filter: brightness(1.08) saturate(1.1); }
+.enter:hover svg { transform: translateX(4px); }
+.enter:active { transform: skewX(-8deg) translateY(2px) scale(.98); box-shadow: 0 0 0 1px rgba(255, 255, 255, .25) inset, 0 4px 14px rgba(200, 255, 46, .35); }
+.enter:focus-visible { outline: 3px solid var(--fg-hi); outline-offset: 5px; }
+/* desabilitado: "Abrindo a câmera…" (carregando) e "Abra no celular" (PC) viram estados próprios, não um botão apagado */
+.enter:disabled { cursor: default; color: var(--neon-g); background: rgba(0, 255, 133, .07);
+  box-shadow: 0 0 0 1.5px rgba(0, 255, 133, .55) inset, 0 0 24px rgba(0, 255, 133, .12); }
+.enter:disabled::before, .enter:disabled::after { animation: none; opacity: 0; }
+.enter:disabled svg { display: none; }
+
+.cam { color: var(--fg-lo); font-size: 12.5px; margin: 12px 0 0; }
+.why { color: var(--neon-y); font-size: 13px; min-height: 1em; margin: 6px 0 0; max-width: 360px; }
+.sub-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; }
+.link-btn { background: none; border: 0; padding: 8px 4px; color: var(--fg-mid); font: 600 12px Inter, system-ui, sans-serif; letter-spacing: 1px;
+  text-transform: uppercase; cursor: pointer; border-bottom: 1px dashed rgba(255, 255, 255, .25); }
+.link-btn:hover, .link-btn:focus-visible { color: var(--neon-g); border-bottom-color: var(--neon-g); outline: none; }
+
+/* telas baixas (celular deitado): portal e título menores para tudo caber */
+@media (max-height: 560px) {
+  .hero { flex-direction: row; gap: 28px; text-align: left; }
+  .portal { width: min(44vw, 78svh); }
+  .hero-copy { align-items: flex-start; }
+  .hero h1::after { margin-left: 0; }
+  .pills { justify-content: flex-start; margin: 12px 0 16px; }
+}
 
 /* ajustes (painel) */
 #settings { width: min(560px, 100vw); max-width: 100vw; max-height: min(86svh, 760px); margin: auto auto 0; padding: 16px 18px 22px; border: 1px solid var(--line);
@@ -98,7 +197,8 @@ button { font: inherit; }
 .opts select { width: 100%; min-width: 0; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .aurora i, .portal::before, .enter::after { animation: none; }
+  #start *, #start *::before, #start *::after { animation: none !important; }
+  .enter, .enter > * { transition: none; }
 }
 
 /* =================================================================== HUD */
