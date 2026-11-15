@@ -70,8 +70,9 @@ function sampleTrack(keys, f, loopLen) {
 const _e = new THREE.Euler();
 const _q = new THREE.Quaternion();
 // pose de carregar (espaço local do braço): gira o braço da lateral (T) para a frente, um pouco para baixo
-const CARRY_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0.3, 'YXZ'));
-const CARRY_R = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, -0.3, 'YXZ'));
+// (no espaço do modelo a frente do personagem é -Z; o braço esquerdo sai em -X e o direito em +X)
+const CARRY_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0.3, 'YXZ'));
+const CARRY_R = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, -0.3, 'YXZ'));
 const CARRY_F = new THREE.Quaternion();
 
 export class VoxelAvatar {

@@ -112,7 +112,7 @@ animações, edite o dicionário `ANIMS`. Paleta é BGR; o espaço é mão-esque
 server/server.js      backend: estáticos, WebSocket, fusão de voxels, gravação, PLY
 shared/               código comum celular+servidor: depth.js (desprojeção), voxelmap.js, protocol.js, mat4.js
 web/index.html        app AR/simulador · js/app.js (loop), world.js (Rapier + colisores), mapper.worker.js (depth → voxels), character.js,
-                      avatar.js, gamepad.js, hud.js (HUD, joystick, menu), games.js (minigames), sfx.js (sons), net.js, sim.js · viewer.html + js/viewer.js
+                      avatar.js, gamepad.js, hud.js (HUD, joystick, menu), games.js (minigames), sfx.js (sons), music.js (trilha Audius), net.js, sim.js · viewer.html + js/viewer.js
 tools/                vox2json.py, reconstruct_open3d.py, make-cert.mjs, build.mjs (gera dist/ para a Vercel)
 test/                 npm test — matemática do depth (inclui buffer girado de celular em retrato), protocolo, mapa
 ```
@@ -142,6 +142,15 @@ No simulador dá para reproduzir: `?sim=1&noise=0.04` (4% de ruído).
 
 Captação do ambiente: filtro de "pixels voadores" nas bordas dos objetos, 3 leituras para confirmar um voxel e
 preenchimento de buracos dentro de planos (sombra atrás de objetos), sem fechar as bordas reais da mesa.
+
+## Botões, jogos e trilha sonora
+
+- **Jogos** em destaque no topo (abre o painel de minigames com ícones e recordes).
+- Botões com **leque** (os "•••"): tocar = ação padrão; **segurar** abre 3 opções em coluna — arraste até uma
+  e solte (ou solte e toque). **Objeto**: Bola · Caixa · Limpar. **Emote**: Acenar · Dançar · Comemorar.
+- **Trilha sonora**: playlist [CryptoRastas Family](https://audius.co/digitaldubs/playlist/cryptorastas-family-playlist)
+  tocada pela API pública do Audius (`web/js/music.js`), lida ao vivo e embaralhada; menu ⋯ › Música / Próxima.
+- Pose de carregar corrigida: braços à frente (antes iam para trás).
 
 ## Fluidez (revisão de desempenho)
 

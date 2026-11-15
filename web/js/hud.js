@@ -12,6 +12,20 @@ const ICON = {
   menu: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   arrow: '<svg viewBox="0 0 24 24"><path d="M12 3l8 14H4z"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M7 9h10a4 4 0 014 4v1.5a3.5 3.5 0 01-6.3 2.1L13.5 15h-3l-1.2 1.6A3.5 3.5 0 013 14.5V13a4 4 0 014-4z"/><path d="M7.5 11v3M6 12.5h3" stroke="#15170f" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="12" r="1" fill="#15170f"/><circle cx="18" cy="14" r="1" fill="#15170f"/></svg>',
+  smile: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.3" fill="#15170f"/><circle cx="15" cy="10" r="1.3" fill="#15170f"/><path d="M8 14c1 2 2.4 3 4 3s3-1 4-3" fill="none" stroke="#15170f" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  dance: '<svg viewBox="0 0 24 24"><circle cx="12" cy="4.5" r="2.2"/><path d="M12 7l-1 6 3 3-1 5M11 13l-3 3M12 8l4-2M12 8l-4 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  cheer: '<svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="2.2"/><path d="M12 9v6l-2 6M12 15l2 6M12 10L7 4M12 10l5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M5 7h14l-1.2 13H6.2zM9 4h6l1 2H8z"/></svg>',
+};
+
+/** ícones dos minigames (cartões do painel Jogos) */
+const GAME_ICON = {
+  coins: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#ffd23f"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#c98a00" stroke-width="1.6"/><path d="M12 8.5v7" stroke="#c98a00" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  race: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="6" ry="8.5" fill="none" stroke="#d9e27a" stroke-width="2.6"/><path d="M3 20l5-4" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
+  hoops: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="#ff8a3d"/><path d="M3.5 12h17M12 3.5v17M6 5.8c3 3.6 3 8.8 0 12.4M18 5.8c-3 3.6-3 8.8 0 12.4" fill="none" stroke="#7a3a12" stroke-width="1.3"/></svg>',
+  bowling: '<svg viewBox="0 0 24 24"><path d="M9.5 3h5c.8 2.5-.2 4.3-.8 5.5 1.8 2 3 4.6 2.5 8.3L15.5 21h-7l-.7-4.2C7.3 13.1 8.5 10.5 10.3 8.5 9.7 7.3 8.7 5.5 9.5 3z" fill="#fafafa"/><path d="M9.6 6.6h4.8" stroke="#c8372d" stroke-width="1.6"/></svg>',
+  tower: '<svg viewBox="0 0 24 24"><path d="M12 2l2.4 5 5.4.6-4 3.7 1.1 5.4L12 14l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z" fill="#ffd23f"/><rect x="7" y="17" width="10" height="5" rx="1" fill="#c8372d"/></svg>',
 };
 
 export const GAMES = [
@@ -36,6 +50,7 @@ export class Hud {
         </div>
       </div>
       <div class="h-diag" hidden></div>
+      <button class="h-play" data-placed data-open-games aria-label="Abrir minigames">${ICON.play}<span>Jogos</span></button>
       <div class="h-game" hidden><b data-g-title></b><span data-g-score></span><span data-g-time></span><button data-g-stop aria-label="Encerrar minigame">✕</button></div>
       <div class="h-hint"></div>
       <div class="h-toast"></div>
@@ -57,11 +72,12 @@ export class Hud {
 
       <div class="h-actions" data-placed>
         <button class="h-act a-jump" data-b="${B.CROSS}" aria-label="Pular">${ICON.jump}<b>Pular</b></button>
-        <button class="h-act a-ball" data-b="${B.CIRCLE}" aria-label="Bola">${ICON.ball}<b data-lbl-ball>Bola</b></button>
-        <button class="h-act a-box" data-b="${B.TRIANGLE}" aria-label="Caixa">${ICON.box}<b>Caixa</b></button>
+        <button class="h-act a-ball has-radial" data-radial="obj" aria-label="Objeto (segure para mais opções)">${ICON.ball}<b data-lbl-ball>Bola</b><u></u></button>
+        <button class="h-act a-box has-radial" data-radial="emote" aria-label="Emote (segure para mais opções)">${ICON.smile}<b>Emote</b><u></u></button>
         <button class="h-act a-grab" data-b="${B.SQUARE}" aria-label="Pegar">${ICON.hand}<b data-lbl-grab>Pegar</b></button>
       </div>
 
+      <div class="h-radial" hidden></div>
       <div class="h-arrow" hidden>${ICON.arrow}</div>
 
       <div class="h-result" hidden>
@@ -74,11 +90,17 @@ export class Hud {
         </div>
       </div>
 
+      <div class="h-gsheet" hidden>
+        <div class="h-sheet-in">
+          <div class="h-grab"></div>
+          <div class="h-ghead"><b>Minigames</b><small>Tudo acontece na sua mesa e no seu chão de verdade</small></div>
+          <div class="h-gcards">${GAMES.map((g, i) => `<button data-game="${g.id}"><i>${GAME_ICON[g.id] || ''}</i><span><b>${g.name}</b><small>${g.desc}</small><em data-best="${g.id}"></em></span></button>`).join('')}</div>
+        </div>
+      </div>
+
       <div class="h-sheet" hidden>
         <div class="h-sheet-in">
           <div class="h-grab"></div>
-          <p class="h-sec">Minigames</p>
-          <div class="h-games">${GAMES.map((g, i) => `<button data-game="${g.id}"><b>${i + 1}. ${g.name}</b><small>${g.desc}</small><em data-best="${g.id}"></em></button>`).join('')}</div>
           <p class="h-sec">Emotes</p>
           <div class="h-row">
             <button data-act="hi" data-close>Acenar</button>
@@ -93,7 +115,9 @@ export class Hud {
             <button data-act="scan" data-close>Escanear</button>
             <button data-b="${B.OPTIONS}" data-tg="malha">Ver malha</button>
             <button data-b="${B.L3}" data-tg="oclusao">Oclusão</button>
-            <button data-act="mute" data-tg="som">Som</button>
+            <button data-act="music" data-tg="musica">Música</button>
+            <button data-act="nextTrack">Próxima</button>
+            <button data-act="mute" data-tg="som">Efeitos</button>
             <button data-b="${B.TOUCHPAD}" data-close>Apagar mapa</button>
           </div>
         </div>
@@ -119,9 +143,12 @@ export class Hud {
       btn.addEventListener('click', () => { buzz(8); onAction?.(btn.dataset.act); if (btn.hasAttribute('data-close')) this.menu(false); });
     }
     for (const btn of root.querySelectorAll('button[data-game]')) {
-      btn.addEventListener('click', () => { buzz(10); this.menu(false); onGame?.(btn.dataset.game); });
+      btn.addEventListener('click', () => { buzz(10); this.menu(false); this.games(false); onGame?.(btn.dataset.game); });
     }
     q('[data-menu]').addEventListener('click', () => this.menu(q('.h-sheet').hidden));
+    q('[data-open-games]').addEventListener('click', () => { buzz(10); this.games(true); });
+    q('.h-gsheet').addEventListener('pointerdown', (e) => { if (e.target.classList.contains('h-gsheet')) this.games(false); });
+    this._radialSetup(onAction);
     q('.h-sheet').addEventListener('pointerdown', (e) => { if (e.target.classList.contains('h-sheet')) this.menu(false); });
     q('[data-exit]').addEventListener('click', () => onExit?.());
     q('[data-diag]').addEventListener('click', () => { const d = q('.h-diag'); d.hidden = !d.hidden; });
@@ -171,7 +198,7 @@ export class Hud {
       secs: [...root.querySelectorAll('[data-sec]')], needle: q('[data-needle]'),
       res: q('.h-result'), rKicker: q('[data-r-kicker]'), rTitle: q('[data-r-title]'), rBig: q('[data-r-big]'), rSub: q('[data-r-sub]'),
       grab: q('.a-grab'), lblGrab: q('[data-lbl-grab]'), lblBall: q('[data-lbl-ball]'),
-      toggles: { malha: q('[data-tg="malha"]'), oclusao: q('[data-tg="oclusao"]'), rec: q('[data-tg="rec"]'), som: q('[data-tg="som"]') },
+      toggles: { malha: q('[data-tg="malha"]'), oclusao: q('[data-tg="oclusao"]'), rec: q('[data-tg="rec"]'), som: q('[data-tg="som"]'), musica: q('[data-tg="musica"]') },
     };
     this.toastT = 0; this.countT = 0;
     pad.extra = this;
@@ -185,7 +212,81 @@ export class Hud {
     this.tapped.clear();
   }
 
-  setPlaced(v) { this.root.classList.toggle('pre', !v); this.root.classList.toggle('placed', v); }
+  setPlaced(v) {
+    this.root.classList.toggle('pre', !v); this.root.classList.toggle('placed', v);
+    if (v && !this._playHinted) { this._playHinted = true; const b = this.root.querySelector('.h-play'); b.classList.add('pulse'); setTimeout(() => b.classList.remove('pulse'), 4200); }
+  }
+  games(open) { this.root.querySelector('.h-gsheet').hidden = !open; this.root.classList.toggle('menu-open', open); }
+
+  // ---------------- leque: tocar = ação padrão; SEGURAR = 3 opções (arraste até uma e solte)
+  _radialSetup(onAction) {
+    const R = this.root.querySelector('.h-radial');
+    const OPTS = {
+      obj: [
+        { label: 'Bola', icon: ICON.ball, run: () => this.tapped.add(B.CIRCLE) },
+        { label: 'Caixa', icon: ICON.box, run: () => this.tapped.add(B.TRIANGLE) },
+        { label: 'Limpar', icon: ICON.trash, run: () => onAction?.('clearProps') },
+      ],
+      emote: [
+        { label: 'Acenar', icon: ICON.hand, run: () => onAction?.('hi') },
+        { label: 'Dançar', icon: ICON.dance, run: () => this.tapped.add(B.RIGHT) },
+        { label: 'Comemorar', icon: ICON.cheer, run: () => this.tapped.add(B.UP) },
+      ],
+    };
+    const DEFAULT = { obj: () => this.tapped.add(B.CIRCLE), emote: () => onAction?.('hi') };
+    for (const btn of this.root.querySelectorAll('[data-radial]')) {
+      const kind = btn.dataset.radial;
+      let timer = 0, open = false, sel = -1, id = null;
+      const close = () => { R.hidden = true; R.innerHTML = ''; open = false; btn.classList.remove('on'); };
+      const show = () => {
+        if (kind === 'obj' && this._holding) return;       // segurando objeto: o botão só "Joga"
+        open = true; buzz(18);
+        const b = btn.getBoundingClientRect(), rr = this.root.getBoundingClientRect();
+        const cx = b.left + b.width / 2 - rr.left, cy = b.top + b.height / 2 - rr.top;
+        // coluna à esquerda do botão, subindo a partir da altura do dedo: não cobre os outros botões nem sai da tela
+        const gap = 74, colX = cx - Math.max(96, b.width * 1.3);
+        const minY = 120, maxY = rr.height - 48;
+        let y0 = Math.min(maxY, cy);
+        if (y0 - 2 * gap < minY) y0 = minY + 2 * gap;
+        R.innerHTML = OPTS[kind].map((o, i) => {
+          const x = colX - (i === 1 ? 10 : 0);              // leve curva
+          return `<button data-i="${i}" style="left:${x}px;top:${y0 - i * gap}px">${o.icon}<b>${o.label}</b></button>`;
+        }).join('');
+        R.hidden = false; R.dataset.kind = kind;
+      };
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); id = e.pointerId; btn.setPointerCapture?.(id); btn.classList.add('on'); sel = -1;
+        if (R.hidden || R.dataset.kind !== kind) open = false;   // (fechado por toque fora)
+        timer = setTimeout(show, 320);
+      });
+      btn.addEventListener('pointermove', (e) => {
+        if (!open || e.pointerId !== id) return;
+        const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('.h-radial button');
+        const i = el ? Number(el.dataset.i) : -1;
+        if (i !== sel) { sel = i; buzz(6); R.querySelectorAll('button').forEach((x, n) => x.classList.toggle('sel', n === i)); }
+      });
+      const end = (e) => {
+        if (e.pointerId !== id) return;
+        clearTimeout(timer); id = null;
+        if (!open) { btn.classList.remove('on'); DEFAULT[kind](); buzz(8); return; }
+        btn.classList.remove('on');
+        if (sel >= 0) { OPTS[kind][sel].run(); close(); }   // soltou em cima de uma opção
+        // soltou sem escolher: o leque fica aberto para tocar na opção
+      };
+      btn.addEventListener('pointerup', end);
+      btn.addEventListener('pointercancel', (e) => { clearTimeout(timer); id = null; close(); });
+      // tocar direto numa opção do leque (sem arrastar)
+      R.addEventListener('pointerdown', (e) => {
+        const el = e.target.closest('button');
+        if (!el || R.dataset.kind !== kind) return;
+        e.preventDefault(); e.stopPropagation(); buzz(10);
+        OPTS[kind][Number(el.dataset.i)].run(); close();
+      });
+      this._closeRadial = close;
+    }
+    // tocar fora fecha o leque
+    this.root.addEventListener('pointerdown', (e) => { if (!R.hidden && !e.target.closest('.h-radial') && !e.target.closest('[data-radial]')) { R.hidden = true; R.innerHTML = ''; } }, true);
+  }
   set touchVisible(v) { this.root.classList.toggle('no-touch', !v); }
   menu(open) { this.el.sheet.hidden = !open; this.root.classList.toggle('menu-open', open); }
 
@@ -209,6 +310,7 @@ export class Hud {
     this._ctx = k;
     this.el.lblGrab.textContent = holding ? 'Soltar' : 'Pegar';
     this.el.lblBall.textContent = holding ? 'Jogar' : 'Bola';
+    this._holding = !!holding;
     this.el.grab.classList.toggle('glow', !!canGrab && !holding);
   }
 
@@ -228,6 +330,7 @@ export class Hud {
 
   // ---------------- minigames
   game(info) {
+    this.root.classList.toggle('in-game', !!info);
     if (!info) { this.el.game.hidden = true; return; }
     this.el.game.hidden = false;
     this.el.gTitle.textContent = info.title;

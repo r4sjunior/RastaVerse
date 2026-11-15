@@ -9,6 +9,7 @@ import { Link } from './net.js';
 import { Hud } from './hud.js';
 import { Games } from './games.js';
 import { sfx } from './sfx.js';
+import { music } from './music.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -129,6 +130,7 @@ startPreview();
 
 btnAr.onclick = async () => {
   sfx.unlock();
+  music.start();                 // trilha CryptoRastas (precisa do toque do usuário)
   if (!xrSupported) return;
   btnAr.disabled = true; setBtn('Abrindo a câmera…');
   await prepareLandscape();
@@ -202,6 +204,7 @@ async function boot() {
     camPos: G.camPos, camFwd: G.camFwd,
   });
   char.onMantle = () => sfx.climb();
+  music.onTrack = (title, artist) => toast('♪ ' + title + (artist ? ' — ' + artist : ''));
   G.hud.size(fmtSize(cfg.height));
   char.onRespawn = () => toast('Caiu onde a câmera não viu — mostre o chão para ele cair lá');
   world.onScores = onCalScores;
@@ -560,8 +563,17 @@ function onHudAction(a) {
   if (a === 'scanDone') endScan();
   else if (a === 'scan') startScan();
   else if (a === 'hi' && G.placed) G.char.playEmote(G.char.emote === 'hi' ? 'wave' : 'hi');
-  else if (a === 'mute') { sfx.muted = !sfx.muted; toast(sfx.muted ? 'Som desligado' : 'Som ligado'); }
+  else if (a === 'mute') { sfx.muted = !sfx.muted; toast(sfx.muted ? 'Efeitos desligados' : 'Efeitos ligados'); }
+  else if (a === 'music') toast(music.toggle() ? 'Música ligada' : 'Música desligada');
+  else if (a === 'nextTrack') { if (!music.enabled) music.toggle(); else if (!music.started) music.start(); else music.next(); }
   else if (a === 'stopGame') G.games.stop();
+  else if (a === 'clearProps') {
+    // remove bolas/caixas soltas (as do minigame em andamento ficam)
+    const keep = new Set(G.games.bodies.map((b) => b.prop).filter(Boolean));
+    if (G.char.held && !keep.has(G.char.held)) G.char.release(false);
+    for (const p of [...G.world.props]) if (!keep.has(p)) G.world.removeProp(p);
+    toast('Objetos removidos');
+  }
   else if (a === 'again') G.games.again();
 }
 
@@ -780,7 +792,7 @@ function updateHud() {
     if (!G.reticleHit) hud.status('search', 'Procurando superfície…');
     else hud.status('ready', G.retStable ? 'Pronto — toque em Colocar aqui' : 'Segure firme um instante');
   } else hud.status(G.fps < 24 ? 'warn' : 'ok', G.char.state === 'air' ? 'No ar' : 'No mundo');
-  hud.toggles({ malha: world.debug && G.phase !== 'scan', oclusao: world.occlusion, rec: !!link.server.recording, som: !sfx.muted });
+  hud.toggles({ malha: world.debug && G.phase !== 'scan', oclusao: world.occlusion, rec: !!link.server.recording, som: !sfx.muted, musica: music.enabled });
   const s = link.server;
   hud.diag([
     chip('depth', G.depthOk ? `${G.depthFrames}${G.world.flipY ? ' ↕' : ''}` : (G.session ? (cal.tries && !cal.done ? 'calibrando' : 'só planos') : '—'), G.depthOk ? 'ok' : 'warn'),
