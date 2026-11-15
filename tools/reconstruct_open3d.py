@@ -33,12 +33,13 @@ def read_frames(path):
                 continue
             w, h = struct.unpack_from('<HH', buf, 16)
             fmt = buf[20]
+            flip = bool(buf[21] & 1)
             scale = struct.unpack_from('<f', buf, 24)[0]
             mats = np.frombuffer(buf, '<f4', 48, 28).astype(np.float64)
             dtype = '<f4' if fmt == 1 else '<u2'
             data = np.frombuffer(buf, dtype, w * h, HEADER).astype(np.float64).reshape(h, w) * scale
             yield {
-                'w': w, 'h': h, 'depth': data,
+                'w': w, 'h': h, 'depth': data, 'flip': flip,
                 # column-major (WebXR) -> row-major numpy
                 'world_from_view': mats[0:16].reshape(4, 4).T,
                 'proj': mats[16:32].reshape(4, 4).T,
@@ -57,6 +58,8 @@ def backproject(f, step=1, max_depth=4.0):
     b = np.stack([(xs + 0.5) / w, (ys + 0.5) / h, np.zeros_like(d), np.ones_like(d)])
     t = view_from_depth @ b
     u, v = t[0] / t[3], t[1] / t[3]
+    if f.get('flip'):
+        v = 1 - v
     inv_proj = np.linalg.inv(f['proj'])
     r = inv_proj @ np.stack([u * 2 - 1, 1 - v * 2, np.ones_like(u), np.ones_like(u)])
     r = r[:3] / r[3]
@@ -120,7 +123,10 @@ def tsdf_mesh(frames, voxel, out):
         b = np.stack([(xs.ravel() + 0.5) / w, (ys.ravel() + 0.5) / h, np.zeros(w * h), np.ones(w * h)])
         t = view_from_depth @ b
         u = np.clip((t[0] / t[3] * W).astype(int), 0, W - 1)
-        v = np.clip((t[1] / t[3] * H).astype(int), 0, H - 1)
+        vv = t[1] / t[3]
+        if f.get('flip'):
+            vv = 1 - vv
+        v = np.clip((vv * H).astype(int), 0, H - 1)
         img[v, u] = f['depth'].ravel()
         P = f['proj']
         fx, fy = P[0, 0] * W / 2, P[1, 1] * H / 2

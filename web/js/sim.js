@@ -85,9 +85,19 @@ export class Sim {
     };
   }
 
-  /** "hit-test" do simulador: raio do centro da tela */
-  hitTest() {
-    this._ndc.set(0, 0);
+  /** grade de "hit-tests" (como os planos do ARCore): pontos em superfícies horizontais */
+  hitGrid() {
+    const out = [];
+    for (let gy = -2; gy <= 2; gy++) for (let gx = -2; gx <= 2; gx++) {
+      const p = this.hitTest(gx * 0.35, gy * 0.35);
+      if (p) out.push(p);
+    }
+    return out;
+  }
+
+  /** "hit-test" do simulador: raio do centro da tela (ou de um ponto NDC) */
+  hitTest(nx = 0, ny = 0) {
+    this._ndc.set(nx, ny);
     this.raycaster.setFromCamera(this._ndc, this.camera);
     const hit = this.raycaster.intersectObjects(this.targets, false)[0];
     if (!hit || !hit.face) return null;

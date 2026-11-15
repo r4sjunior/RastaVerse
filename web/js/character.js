@@ -113,6 +113,17 @@ export class Character {
     }
     this.position.set(nx, ny - H / 2 - 0.002, nz);
 
+    // destravar: querendo andar mas sem sair do lugar (cápsula presa dentro de voxels ruidosos)
+    const wantDist = Math.hypot(desired.x, desired.z), gotDist = Math.hypot(mv.x, mv.z);
+    if (input.mag > 0.3 && wantDist > 1e-5 && gotDist < wantDist * 0.15) this.stuck = (this.stuck || 0) + dt;
+    else this.stuck = 0;
+    if (this.stuck > 0.35) {
+      this.stuck = 0;
+      this.body.setNextKinematicTranslation({ x: nx, y: ny + 0.15 * H, z: nz });
+      this.position.y += 0.15 * H;
+      this.vel.y = 0;
+    }
+
     if (this.grounded) {
       if (!wasGrounded && this.airTime > 0.25) {
         this.onLand?.(this.airTime);

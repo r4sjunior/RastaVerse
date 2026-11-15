@@ -1,7 +1,7 @@
 // Mundo físico em escala 1:1 (metros, gravidade 9,81 m/s²).
 // A geometria real vem do depth do ARCore -> VoxelMap -> um colisor cúbico fixo por voxel ocupado.
 // Os mesmos voxels viram malha invisível de oclusão (o avatar some atrás de objetos reais)
-// e recebem sombra (ShadowMaterial), então o avatar projeta sombra na mesa de verdade.
+// (a sombra do avatar cai num disco ShadowMaterial embaixo dele — ver app.js).
 import * as THREE from 'three';
 import { VoxelMap, unpackKey } from '/shared/voxelmap.js';
 import { unprojectDepth } from '/shared/depth.js';
@@ -9,7 +9,7 @@ import { unprojectDepth } from '/shared/depth.js';
 export const G = 9.81;
 
 export class World {
-  constructor(RAPIER, scene, { res = 0.03, capacity = 60000, carve = true } = {}) {
+  constructor(RAPIER, scene, { res = 0.03, capacity = 40000, carve = true } = {}) {
     this.R = RAPIER;
     this.scene = scene;
     this.res = res;
@@ -29,22 +29,36 @@ export class World {
     this.occluderMat = new THREE.MeshBasicMaterial({ colorWrite: false });
     this.occluder = new THREE.InstancedMesh(box, this.occluderMat, capacity);
     this.occluder.renderOrder = -10;
-    // 2) recebe sombra do avatar e dos objetos
-    this.shadowMat = new THREE.ShadowMaterial({ opacity: 0.38, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-    this.shadowMesh = new THREE.InstancedMesh(box, this.shadowMat, capacity);
-    this.shadowMesh.receiveShadow = true;
-    this.shadowMesh.renderOrder = 5;
     // 3) depuração: voxels coloridos pela altura
     this.debugMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.55 });
     this.debugMesh = new THREE.InstancedMesh(box, this.debugMat, capacity);
     this.debugMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     this.debugMesh.visible = false;
-    for (const m of [this.occluder, this.shadowMesh, this.debugMesh]) {
+    for (const m of [this.occluder, this.debugMesh]) {
       m.count = 0; m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(m);
     }
     this._m = new THREE.Matrix4(); this._c = new THREE.Color(); this._t = [0, 0, 0];
     this.props = [];
+    this.planes = [];               // alturas de planos horizontais vistos pelo ARCore: { y, n }
+    this.flipY = false;             // orientação do depth (autocalibrada no app)
+    // o ruído do depth fica alguns cm acima/abaixo da superfície: a oclusão desce um pouco
+    // para não "comer" os pés do avatar; objetos de verdade (copo, caixa) continuam ocultando
+    this.occluder.position.y = -0.02;
+  }
+
+  /** registra a altura de um plano horizontal do ARCore (hit-test) */
+  addPlaneHeight(y) {
+    let best = null;
+    for (const p of this.planes) if (Math.abs(p.y - y) < 0.025 && (!best || Math.abs(p.y - y) < Math.abs(best.y - y))) best = p;
+    if (best) { best.y += (y - best.y) * 0.1; best.n = Math.min(best.n + 1, 1000); }
+    else { this.planes.push({ y, n: 1 }); if (this.planes.length > 12) { this.planes.sort((a, b) => b.n - a.n); this.planes.length = 10; } }
+  }
+
+  /** se y está na faixa de ruído de um plano conhecido, devolve a altura do plano */
+  snapToPlane(y) {
+    for (const p of this.planes) if (p.n >= 3 && y > p.y - 0.04 && y < p.y + 0.035) return p.y;
+    return null;
   }
 
   set debug(v) { this.debugMesh.visible = v; }
@@ -55,15 +69,17 @@ export class World {
   /** quadro de depth (formato de shared/protocol.js) -> evidência no mapa */
   ingestDepth(f, step = 3) {
     let i = 0;
-    const map = this.map, carve = this.carveOn;
-    this.points += unpro(f, (x, y, z, ox, oy, oz) => {
+    const map = this.map, carve = this.carveOn, planes = this.planes.length > 0;
+    this.points += unprojectDepth(f, (x, y, z, ox, oy, oz) => {
+      // depth ruidoso: pontos rentes a um plano do ARCore são colados no plano (a mesa fica lisa)
+      if (planes) { const py = this.snapToPlane(y); if (py !== null) y = py - 0.002; }
       map.addPoint(x, y, z);
       if (carve && (i++ % 4) === 0) map.carve(ox, oy, oz, x, y, z, 160);
-    }, step);
+    }, { step, maxDepth: 4, flipY: this.flipY });
   }
 
   /** ponto de superfície vindo do hit-test (planos do ARCore) — funciona sem Depth API */
-  addSurfacePoint(x, y, z, w = 1) { this.map.addPoint(x, y, z, w); }
+  addSurfacePoint(x, y, z, w = 1) { this.addPlaneHeight(y); this.map.addPoint(x, y - 0.002, z, w); }
 
   /** aplica as mudanças do mapa nos colisores e malhas (com orçamento por quadro) */
   sync(budget = 1500) {
@@ -74,7 +90,7 @@ export class World {
     while (this.pendingRemove.length && n < budget) { this._remove(this.pendingRemove.pop()); n++; }
     while (this.pendingAdd.length && n < budget) { this._add(this.pendingAdd.pop()); n++; }
     if (n) {
-      for (const m of [this.occluder, this.shadowMesh, this.debugMesh]) {
+      for (const m of [this.occluder, this.debugMesh]) {
         m.count = this.keys.length; m.instanceMatrix.needsUpdate = true;
       }
       this.debugMesh.instanceColor.needsUpdate = true;
@@ -100,7 +116,6 @@ export class World {
     this.keys.push(key); this.slot.set(key, idx);
     this._m.makeScale(1, (2 * hy) / r, 1).setPosition(x, y, z);
     this.occluder.setMatrixAt(idx, this._m);
-    this.shadowMesh.setMatrixAt(idx, this._m);
     this.debugMesh.setMatrixAt(idx, this._m);
     this._c.setHSL(((y * 1.6) % 1 + 1) % 1, 0.75, 0.55);
     this.debugMesh.setColorAt(idx, this._c);
@@ -117,7 +132,7 @@ export class World {
     if (idx !== last) {
       const lk = this.keys[last];
       this.keys[idx] = lk; this.slot.set(lk, idx);
-      for (const m of [this.occluder, this.shadowMesh, this.debugMesh]) {
+      for (const m of [this.occluder, this.debugMesh]) {
         m.getMatrixAt(last, this._m); m.setMatrixAt(idx, this._m);
       }
       this.debugMesh.getColorAt(last, this._c); this.debugMesh.setColorAt(idx, this._c);
@@ -194,4 +209,3 @@ export class World {
   }
 }
 
-function unpro(f, emit, step) { return unprojectDepth(f, emit, { step, maxDepth: 4 }); }

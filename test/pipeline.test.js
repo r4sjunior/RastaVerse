@@ -1,7 +1,7 @@
 // node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { unprojectDepth } from '../shared/depth.js';
+import { unprojectDepth, scoreOrientation } from '../shared/depth.js';
 import { encodeDepthFrame, decodeDepthFrame } from '../shared/protocol.js';
 import { VoxelMap, packKey, unpackKey } from '../shared/voxelmap.js';
 import { perspective, lookAtWorld, invert, transform4 } from '../shared/mat4.js';
@@ -82,4 +82,24 @@ test('mapa: ponto confirma voxel, raio livre apaga objeto que saiu', () => {
   for (let i = 0; i < 10; i++) m.carve(0, 0.52, 0, 3, 0.52, 0);
   assert.equal(m.occupied, 0);
   assert.equal(m.drain().removed.length, 1);
+});
+
+test('autocalibração detecta depth de cabeça para baixo', () => {
+  const f = syntheticFrame({ rotate: false, W: 90, H: 160 });
+  const [ok, flipped] = scoreOrientation(f, 0.75, 0, 0);
+  assert.ok(ok < 0.005 && flipped > 0.03, `normal ${ok} invertido ${flipped}`);
+  // mesmo quadro com as linhas do buffer invertidas: agora a hipótese "invertida" é a certa
+  const g = { ...f, data: new Uint16Array(f.data.length) };
+  for (let y = 0; y < f.height; y++) g.data.set(f.data.subarray(y * f.width, (y + 1) * f.width), (f.height - 1 - y) * f.width);
+  const [ok2, flipped2] = scoreOrientation(g, 0.75, 0, 0);
+  assert.ok(flipped2 < 0.005 && ok2 > 0.03, `normal ${ok2} invertido ${flipped2}`);
+  let maxErr = 0;
+  unprojectDepth({ ...g, flipY: true }, (x, y) => { maxErr = Math.max(maxErr, Math.abs(y - 0.75)); }, { step: 2, maxDepth: 10 });
+  assert.ok(maxErr < 0.003, 'com flipY o plano volta ao lugar: ' + maxErr);
+});
+
+test('protocolo carrega a flag de orientação', () => {
+  const f = { ...syntheticFrame({ W: 16, H: 12 }), flipY: true };
+  assert.equal(decodeDepthFrame(encodeDepthFrame(f)).flipY, true);
+  assert.equal(decodeDepthFrame(encodeDepthFrame({ ...f, flipY: false })).flipY, false);
 });

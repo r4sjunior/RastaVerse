@@ -2,7 +2,7 @@
 //
 // Quadro de depth "RMD1" (220 bytes de cabeçalho + dados):
 //   0  'RMD1'            4  u32 seq           8  f64 timestamp (ms)
-//  16  u16 width        18  u16 height       20  u8 formato (0=u16 mm, 1=f32 m)  21..23 reservado
+//  16  u16 width        18  u16 height       20  u8 formato (0=u16 mm, 1=f32 m)  21 u8 flags (bit0 = v invertido)  22..23 reservado
 //  24  f32 rawValueToMeters
 //  28  f32[16] worldFromView   (pose da câmera = resultado do SLAM do ARCore)
 //  92  f32[16] projection
@@ -25,6 +25,7 @@ export function encodeDepthFrame(f) {
   dv.setUint16(16, f.width, true);
   dv.setUint16(18, f.height, true);
   dv.setUint8(20, isF32 ? 1 : 0);
+  dv.setUint8(21, f.flipY ? 1 : 0);
   dv.setFloat32(24, f.rawValueToMeters, true);
   const mats = new Float32Array(buf, 28, 48);
   mats.set(f.worldFromView, 0);
@@ -52,6 +53,7 @@ export function decodeDepthFrame(input) {
     timestamp: dv.getFloat64(8, true),
     width, height,
     rawValueToMeters: dv.getFloat32(24, true),
+    flipY: (dv.getUint8(21) & 1) === 1,
     worldFromView: mats.slice(0, 16),
     projection: mats.slice(16, 32),
     normDepthFromNormView: mats.slice(32, 48),

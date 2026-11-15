@@ -75,3 +75,29 @@ canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; t
 #touch .side { position: absolute; right: max(10px, env(safe-area-inset-right)); top: 100px; gap: 8px; justify-items: end; }
 #touch .side button { padding: 9px 13px; min-width: 42px; }
 #hint { bottom: auto; top: 112px; }
+
+/* ---------- tela inicial ---------- */
+#start { display: flex; flex-direction: column; min-height: 100svh; }
+.hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px 0 12px; }
+.hero-avatar { image-rendering: pixelated; width: 86px; height: auto; filter: drop-shadow(0 14px 18px rgba(0, 0, 0, .5)); margin-bottom: 14px;
+  animation: bob 2.4s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .hero-avatar { animation: none; } }
+.hero h1 { margin: 0; font-size: 36px; letter-spacing: .5px; }
+.hero h1 span { color: var(--accent); }
+.hero h1::after { content: ""; display: block; height: 4px; width: 84px; margin: 10px auto 0; border-radius: 2px;
+  background: linear-gradient(90deg, var(--rasta-r) 0 33%, var(--rasta-y) 33% 66%, var(--rasta-g) 66%); }
+.hero .tag { color: var(--muted); margin: 14px 0 26px; max-width: 340px; }
+.enter { font: 700 18px/1 system-ui, sans-serif; color: #15170f; background: var(--accent); border: 0; border-radius: 16px;
+  padding: 20px 34px; width: min(100%, 340px); cursor: pointer; box-shadow: 0 10px 30px rgba(217, 226, 122, .18); }
+.enter:active { transform: scale(.98); }
+.enter:disabled { opacity: .6; }
+.hero .cam { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+.hero .why { text-align: center; max-width: 340px; }
+.more { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
+.more summary { cursor: pointer; font-weight: 600; color: var(--muted); }
+.more[open] summary { margin-bottom: 12px; }
+.more table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 13px; }
+.more td { padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+.more td:first-child { color: var(--accent); padding-right: 12px; width: 38%; }
+.more a { color: var(--accent); }

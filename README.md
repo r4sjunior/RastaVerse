@@ -39,7 +39,7 @@ O WebXR só abre em página HTTPS. Publicando na Vercel o app já sai em HTTPS:
 1. Commit + push deste repositório para o GitHub.
 2. Na Vercel: **Add New › Project**, importe o repositório. O `vercel.json` já configura tudo
    (build `npm run build` → pasta `dist/`). Não precisa de variável de ambiente.
-3. No celular Android, abra `https://<seu-projeto>.vercel.app` no **Chrome** → **Entrar em AR**.
+3. No celular Android, abra `https://<seu-projeto>.vercel.app` no **Chrome** → **Entrar no mundo** e permita a câmera.
 4. Mova o celular devagar sobre a mesa/chão até aparecer o alvo branco e toque em **Colocar aqui**.
    O avatar aparece onde a câmera está mirando. Controle pelo **joystick da tela** (arrastar além da borda = correr)
    e pelos botões Pular / Bola / Caixa / Oi; à direita: Trazer aqui (leva o avatar para onde a câmera mira),
@@ -107,6 +107,16 @@ web/index.html        app AR/simulador · js/app.js (loop), world.js (Rapier + v
 tools/                vox2json.py, reconstruct_open3d.py, make-cert.mjs, build.mjs (gera dist/ para a Vercel)
 test/                 npm test — matemática do depth (inclui buffer girado de celular em retrato), protocolo, mapa
 ```
+
+## Depth real (ruído) — como o app lida
+
+O depth do ARCore em mesas lisas tem vários cm de ruído. Para o avatar não afundar nem travar:
+- **planos do ARCore como verdade**: pontos de depth a até ~4 cm de um plano horizontal detectado são colados no plano;
+- **autocalibração** da orientação do depth nos primeiros quadros (compara com o plano do alvo; o chip "depth" mostra `↕` se invertido);
+- o avatar **nasce em cima** do que houver no alvo e é **destravado** automaticamente se ficar preso;
+- a oclusão desce 2 cm, então o ruído da superfície não esconde os pés.
+
+No simulador dá para reproduzir: `?sim=1&noise=0.04` (4% de ruído).
 
 ## Limites conhecidos
 

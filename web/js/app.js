@@ -1,12 +1,13 @@
 // RastaME MR — app do celular (WebXR immersive-ar + ARCore) e simulador de PC.
 import * as THREE from 'three';
 import RAPIER from '/vendor/rapier/rapier.mjs';
-import { loadAvatar } from './avatar.js';
+import { VoxelAvatar } from './avatar.js';
 import { World } from './world.js';
 import { Character } from './character.js';
 import { Pad, B } from './gamepad.js';
 import { Link } from './net.js';
 import { TouchControls } from './touch.js';
+import { scoreOrientation } from '/shared/depth.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -22,6 +23,14 @@ $('#opt-res').value = String(cfg.res);
 $('#opt-height').onchange = (e) => { cfg.height = Number(e.target.value); saveCfg(); };
 $('#opt-res').onchange = (e) => { cfg.res = Number(e.target.value); saveCfg(); };
 
+// ------------------------------------------------------------------ pré-carregamento
+// física (WASM) e avatar já carregam enquanto a tela inicial está aberta: a câmera abre sem espera
+const preload = {
+  rapier: RAPIER.init(),
+  avatar: fetch('./assets/avatar.json').then((r) => { if (!r.ok) throw new Error('avatar.json ' + r.status); return r.json(); }),
+};
+preload.avatar.catch(() => {});
+
 // ------------------------------------------------------------------ tela inicial
 const pad = new Pad();
 const link = new Link('phone');
@@ -29,17 +38,19 @@ function setCheck(id, state, text) {
   const el = $(id); el.className = 'check ' + state; el.querySelector('em').textContent = text;
 }
 let xrSupported = false;
+const btnAr = $('#btn-ar');
+btnAr.disabled = true;
 (async () => {
-  if (!window.isSecureContext) {
-    setCheck('#ck-xr', 'bad', 'página não é "segura" (precisa HTTPS ou a flag do Chrome — ver README)');
-  } else if (!navigator.xr) {
-    setCheck('#ck-xr', 'bad', 'navegador sem WebXR (use o Chrome no Android com ARCore)');
-  } else {
+  let why = '';
+  if (!window.isSecureContext) why = 'Abra pelo link https:// do app.';
+  else if (!navigator.xr) why = 'Abra este link no Google Chrome do Android.';
+  else {
     xrSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
-    setCheck('#ck-xr', xrSupported ? 'ok' : 'bad', xrSupported ? 'immersive-ar disponível' : 'immersive-ar indisponível neste aparelho');
+    if (!xrSupported) why = 'Este aparelho ainda não tem realidade aumentada. Instale/atualize o “Google Play Services for AR” e abra no Chrome.';
   }
-  $('#btn-ar').disabled = !xrSupported;
-  if (!xrSupported) $('#why').textContent = 'Sem AR aqui — use o Simulador para testar no PC.';
+  setCheck('#ck-xr', xrSupported ? 'ok' : 'bad', xrSupported ? 'pronto' : why);
+  btnAr.disabled = false;
+  if (!xrSupported) { btnAr.textContent = 'Abrir simulador'; $('#why').textContent = why; $('.hero .cam').hidden = true; }
 })();
 const startTimer = setInterval(() => {
   pad.poll();
@@ -47,7 +58,17 @@ const startTimer = setInterval(() => {
   setCheck('#ck-srv', link.ok ? 'ok' : 'warn', link.ok ? `conectado · voxel ${(link.server.voxel || 0) * 100} cm` : 'offline (o AR funciona, mas sem nuvem de pontos no PC)');
 }, 300);
 
-$('#btn-ar').onclick = () => startAR().catch((e) => { console.error(e); $('#why').textContent = 'Falha ao iniciar AR: ' + e.message; });
+btnAr.onclick = () => {
+  if (!xrSupported) { location.search = '?sim=1'; return; }
+  btnAr.disabled = true; btnAr.textContent = 'Abrindo a câmera…';
+  startAR().catch((e) => {
+    console.error(e);
+    btnAr.disabled = false; btnAr.textContent = 'Entrar no mundo';
+    $('#why').textContent = /denied|permission|NotAllowed/i.test(e.name + e.message)
+      ? 'Precisamos da câmera para colocar o avatar no seu mundo. Toque de novo e permita o acesso.'
+      : 'Não deu para abrir a câmera: ' + e.message;
+  });
+};
 $('#btn-exit').onclick = () => { if (G.session) G.session.end(); else location.href = location.pathname; };
 if (SIM) startSim().catch((e) => { console.error(e); $('#why').textContent = 'Falha no simulador: ' + e.message; });
 
@@ -63,12 +84,12 @@ const G = {
 
 async function boot() {
   clearInterval(startTimer);
-  await RAPIER.init();
+  await preload.rapier;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.appendChild(renderer.domElement);
   document.body.classList.add('running');
   $('#start').hidden = true; $('#hud').hidden = false;
@@ -85,7 +106,7 @@ async function boot() {
   scene.add(sun, sun.target);
 
   const world = new World(RAPIER, scene, { res: cfg.res });
-  const avatar = await loadAvatar('./assets/avatar.json', { height: cfg.height });
+  const avatar = new VoxelAvatar(await preload.avatar, { height: cfg.height });
   avatar.root.visible = false;
   const char = new Character(world, avatar, scene);
   char.onLand = (t) => pad.rumble(Math.min(1, t), 0.3, 90);
@@ -127,10 +148,10 @@ async function startAR() {
   G.hitCenter = await session.requestHitTestSource({ space: viewer });
   // grade de raios: amostra superfícies (planos do ARCore) mesmo sem Depth API
   G.hitGrid = [];
-  for (let gy = -2; gy <= 2; gy++) {
-    for (let gx = -2; gx <= 2; gx++) {
+  for (let gy = -1; gy <= 1; gy++) {
+    for (let gx = -1; gx <= 1; gx++) {
       if (!gx && !gy) continue;
-      const src = await session.requestHitTestSource({ space: viewer, offsetRay: new XRRay({ x: 0, y: 0, z: 0, w: 1 }, { x: gx * 0.22, y: gy * 0.3, z: -1, w: 0 }) }).catch(() => null);
+      const src = await session.requestHitTestSource({ space: viewer, offsetRay: new XRRay({ x: 0, y: 0, z: 0, w: 1 }, { x: gx * 0.4, y: gy * 0.55, z: -1, w: 0 }) }).catch(() => null);
       if (src) G.hitGrid.push(src);
     }
   }
@@ -159,22 +180,27 @@ function onXRFrame(t, frame) {
       if (p) {
         _m.fromArray(p.transform.matrix);
         const up = new THREE.Vector3(_m.elements[4], _m.elements[5], _m.elements[6]);
-        if (up.y > 0.75) G.reticleHit = new THREE.Vector3().setFromMatrixPosition(_m);
+        if (up.y > 0.75) {
+          G.reticleHit = new THREE.Vector3().setFromMatrixPosition(_m);
+          G.world.addPlaneHeight(G.reticleHit.y);
+        }
       }
     }
     // pontos de superfície da grade de hit-test (reforça o mapa)
-    if ((G.frameN = (G.frameN || 0) + 1) % 3 === 0) {
+    if ((G.frameN = (G.frameN || 0) + 1) % 4 === 0) {
       for (const src of G.hitGrid) {
         const r = frame.getHitTestResults(src)[0];
         const p = r?.getPose(ref);
-        if (p) { const m = p.transform.matrix; G.world.addSurfacePoint(m[12], m[13] - 0.001, m[14], 1); }
+        // só superfícies horizontais (mesa, chão); paredes ficam por conta do depth
+        if (p && p.transform.matrix[5] > 0.9) { const m = p.transform.matrix; G.world.addSurfacePoint(m[12], m[13], m[14], 1); }
       }
     }
     // depth do ARCore (~8 Hz local, ~5 Hz para o backend)
-    if (t - G.lastDepth > 120) {
+    if (t - G.lastDepth > 140) {
       G.lastDepth = t;
       const f = readDepth(frame, pose.views[0]);
-      if (f) {
+      if (f && calibrateDepth(f)) {
+        f.flipY = G.world.flipY;
         G.depthOk = true; G.depthFrames++;
         G.world.ingestDepth(f, cfg.res >= 0.04 ? 3 : 2);
         if (t - G.lastSend > 190 && link.sendDepth(f)) G.lastSend = t;
@@ -183,6 +209,29 @@ function onXRFrame(t, frame) {
   }
   tick(t);
   renderer.render(G.scene, G.camera);
+}
+
+// A convenção vertical do depth pode variar entre aparelhos/versões do Chrome. Antes de usar o depth,
+// compara as duas hipóteses contra o plano do hit-test (verdade do ARCore) por alguns quadros.
+const cal = { done: false, a: 0, b: 0, n: 0, tries: 0 };
+function calibrateDepth(f) {
+  if (cal.done) return true;
+  cal.tries++;
+  const r = G.reticleHit;
+  if (r) {
+    const [ea, eb] = scoreOrientation(f, r.y, r.x, r.z);
+    if (Number.isFinite(ea) || Number.isFinite(eb)) {
+      cal.n++;
+      if (ea < eb) cal.a++; else cal.b++;
+      G.calErr = [ea, eb];
+    }
+  }
+  if (cal.n >= 6 || cal.tries > 150) {
+    cal.done = true;
+    G.world.flipY = cal.b > cal.a;
+    console.info('[depth] orientação', G.world.flipY ? 'invertida' : 'normal', cal, G.calErr);
+  }
+  return cal.done;
 }
 
 let depthSeq = 0;
@@ -208,12 +257,13 @@ async function startSim() {
   const { Sim } = await import('./sim.js');
   const sim = new Sim(G.scene, G.camera, G.renderer.domElement);
   G.sim = sim;
-  G.world.shadowMesh.visible = false; // o mundo simulado já recebe sombra
   G.world.occlusion = false;          // e já se oculta sozinho (no AR o fundo é a câmera)
   G.world.setFloor(0);
   hint('Simulador: mire na mesa (centro da tela) e toque em “Colocar aqui” (ou Espaço) · arraste para girar');
   const clock = new THREE.Clock();
   let lastDepth = -1;
+  // ?noise=0.04 simula depth ruidoso de aparelho real (fração da distância)
+  const simNoise = Number(params.get('noise') || 0.004);
   G.renderer.setAnimationLoop((t) => {
     sim.update();
     G.camera.updateMatrixWorld();
@@ -221,12 +271,14 @@ async function startSim() {
     G.camera.getWorldDirection(G.camFwd);
     if (t - lastDepth > 250) {
       lastDepth = t;
-      const f = sim.depthFrame();
+      const f = sim.depthFrame(simNoise);
+      for (const p of sim.hitGrid()) G.world.addSurfacePoint(p.x, p.y, p.z, 1);
       G.depthOk = true; G.depthFrames++;
       G.world.ingestDepth(f, 1);
       link.sendDepth(f);
     }
     G.reticleHit = sim.hitTest();
+    if (G.reticleHit) G.world.addPlaneHeight(G.reticleHit.y);
     sim.orbit(pad.rx, pad.ry, Math.min(clock.getDelta(), 0.05));
     tick(t);
     G.renderer.render(G.scene, G.camera);
@@ -266,6 +318,11 @@ function buildOverlays() {
   gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
   const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
   blob.renderOrder = 6; blob.visible = false; scene.add(blob); G.blob = blob;
+  // apanhador de sombra: disco invisível que só mostra a sombra projetada do avatar/objetos
+  const catcher = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2),
+    new THREE.ShadowMaterial({ opacity: 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  catcher.receiveShadow = true; catcher.renderOrder = 7; catcher.visible = false;
+  scene.add(catcher); G.catcher = catcher;
 }
 
 // ------------------------------------------------------------------ loop do jogo (AR e simulador)
@@ -277,7 +334,7 @@ function tick(t) {
   G.fps += ((dt > 0 ? 1 / dt : 60) - G.fps) * 0.05;
   pad.poll();
   const { world, char } = G;
-  world.sync(SIM ? 4000 : 1500);
+  world.sync(SIM ? 4000 : 350);
 
   // retícula
   G.reticle.visible = !!G.reticleHit && (!G.placed || pad.held(B.R3));
@@ -309,7 +366,7 @@ function tick(t) {
 function place() {
   const p = G.reticleHit;
   if (!p) { toast('Sem superfície no alvo — mova o celular devagar'); return; }
-  G.char.spawn(p.clone().add(new THREE.Vector3(0, 0.01, 0)), cfg.height);
+  spawnAt(p);
   G.avatar.root.visible = true;
   G.char.yaw = Math.atan2(G.camPos.x - p.x, G.camPos.z - p.z); // olhando para você
   G.placed = true;
@@ -317,6 +374,17 @@ function place() {
   G.char.playEmote('hi');
   hint('');
   pad.rumble(0.3, 0.6, 120);
+}
+
+/** nasce sempre EM CIMA do que existir no ponto (plano do ARCore ou voxels), nunca dentro */
+function spawnAt(p) {
+  const H = cfg.height;
+  const from = p.y + Math.max(0.3, H);
+  const exclude = G.char.collider || null;
+  const top = G.world.groundBelow(p.x, from, p.z, from - p.y + 0.1, exclude);
+  // aceita a superfície encontrada se for coerente com o plano (ruído/objeto baixo); senão fica no plano
+  const y = top !== null && top > p.y - 0.05 && top < p.y + 0.2 ? Math.max(top, p.y) : p.y;
+  G.char.spawn(new THREE.Vector3(p.x, y + 0.01, p.z), H);
 }
 
 function handleButtons() {
@@ -338,7 +406,7 @@ function handleButtons() {
     char.resize(cfg.height); saveCfg();
     toast(`Altura do avatar: ${cfg.height >= 1 ? cfg.height.toFixed(2).replace('.', ',') + ' m' : Math.round(cfg.height * 100) + ' cm'}`);
   }
-  if (pad.pressed(B.R3) && G.reticleHit) { G.char.spawn(G.reticleHit.clone().add(new THREE.Vector3(0, 0.01, 0)), cfg.height); toast('Avatar recolocado'); }
+  if (pad.pressed(B.R3) && G.reticleHit) { spawnAt(G.reticleHit); toast('Avatar trazido para o alvo'); }
 }
 
 /** botões que valem mesmo antes de colocar o avatar */
@@ -398,11 +466,14 @@ function updateShadows() {
   if (cam.right !== e) { cam.left = -e; cam.right = e; cam.top = e; cam.bottom = -e; cam.near = 0.01; cam.far = H * 10 + 1; cam.updateProjectionMatrix(); }
   const gy = world.groundBelow(p.x, p.y + H * 0.2, p.z, 4, char.collider);
   blob.visible = gy !== null;
+  G.catcher.visible = gy !== null && !G.sim;
   if (gy !== null) {
     const h = Math.max(0, p.y - gy);
     const s = H * 0.55 * (1 + h / H * 0.6);
     blob.scale.set(s, 1, s);
     blob.position.set(p.x, gy + 0.003, p.z);
+    G.catcher.position.set(p.x, gy + 0.002, p.z);
+    G.catcher.scale.setScalar(Math.max(0.25, H * 3));
     blob.material.opacity = THREE.MathUtils.clamp(1 - h / (H * 3), 0.15, 1);
   }
 }
@@ -415,7 +486,7 @@ function updateHud() {
   const s = link.server;
   $('#chips').innerHTML = [
     chip('controle', pad.connected ? 'ok' : pad.source === 'teclado' ? 'teclado' : '—', pad.connected ? 'ok' : 'warn'),
-    chip('depth', G.depthOk ? `${G.depthFrames}` : (G.session ? 'só planos' : '—'), G.depthOk ? 'ok' : 'warn'),
+    chip('depth', G.depthOk ? `${G.depthFrames}${G.world.flipY ? ' ↕' : ''}` : (G.session ? (cal.tries && !cal.done ? 'calibrando' : 'só planos') : '—'), G.depthOk ? 'ok' : 'warn'),
     chip('voxels', G.world.keys.length.toLocaleString('pt-BR')),
     chip('backend', link.ok ? (s.occupied ?? 0).toLocaleString('pt-BR') : 'offline', link.ok ? 'ok' : 'bad'),
     chip('fps', Math.round(G.fps)),

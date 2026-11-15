@@ -16,60 +16,51 @@
 </head>
 <body>
 <main id="start">
-  <header>
+  <section class="hero">
+    <img class="hero-avatar" src="./assets/avatar.png" alt="Avatar RastaME" width="86" height="220">
     <h1>RastaME <span>MR</span></h1>
-    <p>Realidade mista com controle de PS4 e um celular Android. O ARCore faz o SLAM, o depth vira um mapa de voxels em escala 1:1 e o seu avatar anda, pula e cai nas superfícies de verdade.</p>
-  </header>
-
-  <section class="checks">
-    <div class="check" id="ck-xr"><i></i><span>WebXR / ARCore</span><em>verificando…</em></div>
-    <div class="check" id="ck-pad"><i></i><span>Controle PS4</span><em>aperte qualquer botão do controle</em></div>
-    <div class="check" id="ck-srv"><i></i><span>Backend SLAM</span><em>conectando…</em></div>
+    <p class="tag">Seu avatar no mundo real. Aponte a câmera para uma mesa ou o chão e controle com o joystick.</p>
+    <button id="btn-ar" class="enter">Entrar no mundo</button>
+    <p class="cam">O navegador vai pedir permissão para usar a câmera.</p>
+    <p id="why" class="why"></p>
   </section>
 
-  <section class="opts">
-    <label>Altura do avatar
-      <select id="opt-height">
-        <option value="0.15">15 cm (boneco de mesa)</option>
-        <option value="0.25" selected>25 cm</option>
-        <option value="0.5">50 cm</option>
-        <option value="1.75">1,75 m (tamanho real)</option>
-      </select>
-    </label>
-    <label>Voxel da física
-      <select id="opt-res">
-        <option value="0.02">2 cm (mais detalhe)</option>
-        <option value="0.03" selected>3 cm</option>
-        <option value="0.05">5 cm (mais leve)</option>
-      </select>
-    </label>
-  </section>
+  <details class="more">
+    <summary>Configurações e comandos</summary>
 
-  <div class="actions">
-    <button id="btn-ar" class="primary" disabled>Entrar em AR</button>
-    <a id="btn-sim" class="ghost" href="?sim=1">Simulador (PC)</a>
-  </div>
-  <p id="why" class="why"></p>
+    <section class="checks">
+      <div class="check" id="ck-xr"><i></i><span>Realidade aumentada (ARCore)</span><em>verificando…</em></div>
+      <div class="check" id="ck-pad"><i></i><span>Controle PS4 (opcional)</span><em>aperte qualquer botão do controle</em></div>
+      <div class="check" id="ck-srv"><i></i><span>Backend da nuvem de pontos (opcional)</span><em>conectando…</em></div>
+    </section>
 
-  <details class="help">
-    <summary>Comandos</summary>
-    <p class="kbd">Sem controle: use o joystick e os botões que aparecem na tela (arraste o dedo além da borda do joystick para correr).</p>
+    <section class="opts">
+      <label>Altura do avatar
+        <select id="opt-height">
+          <option value="0.15">15 cm</option>
+          <option value="0.25" selected>25 cm</option>
+          <option value="0.5">50 cm</option>
+          <option value="1.75">1,75 m (real)</option>
+        </select>
+      </label>
+      <label>Detalhe da física
+        <select id="opt-res">
+          <option value="0.02">2 cm</option>
+          <option value="0.03" selected>3 cm</option>
+          <option value="0.05">5 cm (leve)</option>
+        </select>
+      </label>
+    </section>
+
     <table>
-      <tr><td>Analógico esq.</td><td>andar / correr (relativo à câmera)</td></tr>
-      <tr><td>R2 (pressão)</td><td>sprint · L2 segurado: andar devagar</td></tr>
-      <tr><td>✕</td><td>colocar o avatar no alvo · pular</td></tr>
-      <tr><td>○ / toque na tela</td><td>arremessar bolinha (física real)</td></tr>
-      <tr><td>△</td><td>derrubar uma caixa na frente do avatar</td></tr>
-      <tr><td>□</td><td>acenar</td></tr>
-      <tr><td>Direcional</td><td>↑ comemorar · ↓ sentar · ← palmas · → danças</td></tr>
-      <tr><td>L1 / R1</td><td>diminuir / aumentar o avatar</td></tr>
-      <tr><td>R3</td><td>recolocar o avatar no alvo</td></tr>
-      <tr><td>L3</td><td>liga/desliga oclusão pelo mundo real</td></tr>
-      <tr><td>Options</td><td>mostrar a malha de voxels (debug)</td></tr>
-      <tr><td>Share</td><td>gravar sessão no backend (para reconstrução 3D)</td></tr>
-      <tr><td>Touchpad</td><td>apagar o mapa</td></tr>
+      <tr><td>Joystick da tela</td><td>andar · arraste além da borda para correr</td></tr>
+      <tr><td>Pular / Bola / Caixa / Oi</td><td>botões no canto direito</td></tr>
+      <tr><td>Trazer aqui</td><td>leva o avatar para onde a câmera mira</td></tr>
+      <tr><td>− / +</td><td>diminuir / aumentar o avatar</td></tr>
+      <tr><td>Malha</td><td>mostra o que o celular mapeou</td></tr>
+      <tr><td>Controle PS4</td><td>analógico, ✕ pular, ○ bola, △ caixa, □ acenar, R2 correr, L1/R1 tamanho, direcional emotes</td></tr>
     </table>
-    <p class="kbd">No PC: WASD, Espaço, Shift, G, F, E, setas, Q/R, P, C, V, M · IJKL orbita a câmera.</p>
+    <p class="kbd"><a id="btn-sim" href="?sim=1">Abrir o simulador (PC)</a> — WASD, Espaço, Shift, G, F, E, Q/R · IJKL gira a câmera.</p>
   </details>
 </main>
 

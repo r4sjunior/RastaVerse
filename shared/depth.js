@@ -16,6 +16,7 @@ import { invert, transform4 } from './mat4.js';
  */
 export function unprojectDepth(f, emit, opt = {}) {
   const step = opt.step || 2, minD = opt.minDepth ?? 0.15, maxD = opt.maxDepth ?? 4.0;
+  const flipY = opt.flipY ?? !!f.flipY;
   const viewFromDepth = invert(f.normDepthFromNormView) || f.normDepthFromNormView;
   const invProj = invert(f.projection);
   const W = f.worldFromView;
@@ -32,7 +33,9 @@ export function unprojectDepth(f, emit, opt = {}) {
       if (d < minD || d > maxD) continue;
       // buffer de depth normalizado -> view normalizada
       transform4(viewFromDepth, (px + 0.5) / w, (py + 0.5) / h, 0, 1, t);
-      const u = t[0] / (t[3] || 1), v = t[1] / (t[3] || 1);
+      const u = t[0] / (t[3] || 1);
+      let v = t[1] / (t[3] || 1);
+      if (flipY) v = 1 - v;
       // NDC -> raio em espaço de câmera
       transform4(invProj, u * 2 - 1, 1 - v * 2, 1, 1, t);
       const rx = t[0] / t[3], ry = t[1] / t[3], rz = t[2] / t[3];
@@ -49,4 +52,24 @@ export function unprojectDepth(f, emit, opt = {}) {
     }
   }
   return n;
+}
+
+/**
+ * Autocalibração da orientação vertical do depth no aparelho real.
+ * Usa o plano do hit-test (verdade do ARCore): desprojeta a região central do depth nas duas
+ * hipóteses (normal e com v invertido) e mede a distância mediana dos pontos até o plano y=planeY
+ * perto do alvo (px,pz). A hipótese certa dá erro de ~1 cm; a errada, dezenas de cm.
+ * @returns {[number, number]} [erro normal, erro invertido] em metros (Infinity se sem pontos)
+ */
+export function scoreOrientation(f, planeY, px, pz, radius = 0.35) {
+  const out = [];
+  for (const flipY of [false, true]) {
+    const errs = [];
+    unprojectDepth(f, (x, y, z) => {
+      if (Math.hypot(x - px, z - pz) < radius) errs.push(Math.abs(y - planeY));
+    }, { step: 3, flipY, maxDepth: 3 });
+    errs.sort((a, b) => a - b);
+    out.push(errs.length >= 15 ? errs[errs.length >> 1] : Infinity);
+  }
+  return out;
 }
