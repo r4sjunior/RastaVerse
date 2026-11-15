@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.rastaverse.rastame",
+      "sha256_cert_fingerprints": [
+        "TROCAR:PELA:IMPRESSAO:SHA256:DA:CHAVE:DE:ASSINATURA"
+      ]
+    }
+  }
+]

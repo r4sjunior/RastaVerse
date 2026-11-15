@@ -207,3 +207,21 @@ No simulador com CPU 4× mais lenta: de ~4,6 para ~27 FPS (quadro típico de 267
 - Objetos que se mexem são apagados do mapa aos poucos (carving por raio livre); pessoas passando podem
   deixar "fantasmas" por alguns segundos.
 - A pose do ARCore pode dar saltos ao relocalizar; o mapa não é corrigido retroativamente (sem loop closure no backend).
+
+## App Android (Play Store) — preparado, ainda não publicado
+
+O site já é um **PWA instalável**: `web/manifest.webmanifest`, `web/sw.js` (service worker mínimo, **sem cache** do app,
+então cada deploy na Vercel chega na hora; só mostra um aviso se estiver sem internet) e ícones em `web/assets/icons/`.
+No Chrome do Android já aparece "Instalar app".
+
+Para a Play Store o caminho é **TWA** (Trusted Web Activity): o app abre o site dentro do Chrome, então o **WebXR/ARCore
+continua funcionando** (num WebView comum, como Capacitor/Cordova, o AR não funciona). Quando tiver a conta Google Play:
+
+1. Gere o pacote no [PWABuilder.com](https://www.pwabuilder.com) (cole a URL da Vercel › Android) ou com
+   `npx @bubblewrap/cli init --manifest https://<seu-projeto>.vercel.app/manifest.webmanifest` e `npx @bubblewrap/cli build`.
+   Use o pacote `com.rastaverse.rastame` (ou troque também em `assetlinks.json`).
+2. Copie a impressão **SHA-256** da chave de assinatura (o PWABuilder/Bubblewrap mostra; se usar a assinatura da Play,
+   está em Play Console › Integridade do app) para `web/.well-known/assetlinks.json` e faça deploy. Sem isso o app abre
+   com a barra de endereço do Chrome.
+3. Envie o **.aab** para a Play Console (o .apk serve só para testar no celular). **Guarde a chave de assinatura**:
+   sem ela não dá para atualizar o app.
