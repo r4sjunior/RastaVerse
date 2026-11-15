@@ -4,8 +4,11 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#14161a">
+<meta name="theme-color" content="#0b0d10">
 <title>RastaME MR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="./css/app.css">
 <script type="importmap">
 { "imports": {
@@ -16,24 +19,42 @@
 </head>
 <body>
 <main id="start">
+  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="floor-grid" aria-hidden="true"></div>
+
   <section class="hero">
-    <img class="hero-avatar" src="./assets/avatar.png" alt="Avatar RastaME" width="86" height="220">
-    <h1>RastaME <span>MR</span></h1>
-    <p class="tag">Seu avatar no mundo real. Aponte a câmera para uma mesa ou o chão e controle com o joystick.</p>
-    <button id="btn-ar" class="enter">Entrar no mundo</button>
-    <p class="cam">O navegador vai pedir permissão para usar a câmera. Melhor na horizontal.</p>
-    <p id="why" class="why"></p>
+    <div class="portal">
+      <canvas id="preview" aria-label="Seu avatar em 3D"></canvas>
+      <img class="portal-fallback" src="./assets/avatar.png" alt="" width="86" height="220">
+    </div>
+
+    <div class="hero-copy">
+      <span class="eyebrow"><b></b>Realidade mista · só o celular</span>
+      <h1>Rasta<span>ME</span></h1>
+      <p class="tag">Coloque seu avatar no mundo real. Ele anda, pula e cai nas superfícies de verdade — em escala 1:1.</p>
+      <ul class="pills">
+        <li>Física real</li>
+        <li>Joystick ou PS4</li>
+        <li>Sem óculos</li>
+      </ul>
+      <button id="btn-ar" class="enter"><span>Entrar no mundo</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+      <p id="cam-note" class="cam">Vai pedir a câmera · funciona melhor na horizontal</p>
+      <p id="why" class="why"></p>
+      <div class="sub-actions">
+        <button id="btn-settings" class="link-btn" type="button">Ajustes e comandos</button>
+        <span aria-hidden="true">·</span>
+        <a id="btn-sim" class="link-btn" href="?sim=1">Simulador (PC)</a>
+      </div>
+    </div>
   </section>
 
-  <details class="more">
-    <summary>Configurações e comandos</summary>
-
+  <dialog id="settings">
+    <div class="sheet-head"><h2>Ajustes</h2><button id="settings-close" class="close-btn" type="button" aria-label="Fechar">✕</button></div>
     <section class="checks">
       <div class="check" id="ck-xr"><i></i><span>Realidade aumentada (ARCore)</span><em>verificando…</em></div>
       <div class="check" id="ck-pad"><i></i><span>Controle PS4 (opcional)</span><em>aperte qualquer botão do controle</em></div>
       <div class="check" id="ck-srv"><i></i><span>Backend da nuvem de pontos (opcional)</span><em>conectando…</em></div>
     </section>
-
     <section class="opts">
       <label>Altura do avatar
         <select id="opt-height">
@@ -57,17 +78,16 @@
         </select>
       </label>
     </section>
-
+    <h3>Comandos</h3>
     <table>
       <tr><td>Joystick da tela</td><td>andar · arraste além da borda para correr</td></tr>
       <tr><td>Pular / Bola / Caixa / Oi</td><td>botões no canto direito</td></tr>
-      <tr><td>Trazer aqui</td><td>leva o avatar para onde a câmera mira</td></tr>
-      <tr><td>− / +</td><td>diminuir / aumentar o avatar</td></tr>
-      <tr><td>Malha</td><td>mostra o que o celular mapeou</td></tr>
-      <tr><td>Controle PS4</td><td>analógico, ✕ pular, ○ bola, △ caixa, □ acenar, R2 correr, L1/R1 tamanho, direcional emotes</td></tr>
+      <tr><td>Alvo (topo)</td><td>traz o avatar para onde a câmera mira</td></tr>
+      <tr><td>Menu ⋯</td><td>emotes, tamanho do avatar, malha, oclusão, gravar</td></tr>
+            <tr><td>Controle PS4</td><td>analógico, ✕ pular, ○ bola, △ caixa, □ acenar, R2 correr, L1/R1 tamanho, direcional emotes</td></tr>
     </table>
-    <p class="kbd"><a id="btn-sim" href="?sim=1">Abrir o simulador (PC)</a> — WASD, Espaço, Shift, G, F, E, Q/R · IJKL gira a câmera.</p>
-  </details>
+    <p class="kbd">No PC: WASD, Espaço, Shift, G, F, E, Q/R · IJKL gira a câmera.</p>
+  </dialog>
 </main>
 
 <div id="hud" hidden></div>

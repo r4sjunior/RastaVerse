@@ -68,7 +68,7 @@ btnAr.disabled = true;
   }
   setCheck('#ck-xr', xrSupported ? 'ok' : 'bad', xrSupported ? 'pronto' : why);
   btnAr.disabled = false;
-  if (!xrSupported) { btnAr.textContent = 'Abrir simulador'; $('#why').textContent = why; $('.hero .cam').hidden = true; }
+  if (!xrSupported) { setBtn('Abrir simulador'); $('#why').textContent = why; $('#cam-note').hidden = true; }
 })();
 const startTimer = setInterval(() => {
   pad.poll();
@@ -76,15 +76,66 @@ const startTimer = setInterval(() => {
   setCheck('#ck-srv', link.ok ? 'ok' : 'warn', link.ok ? `conectado · voxel ${(link.server.voxel || 0) * 100} cm` : 'offline (o AR funciona, mas sem nuvem de pontos no PC)');
 }, 300);
 
+function setBtn(text) { const sp = btnAr.querySelector('span'); if (sp) sp.textContent = text; else btnAr.textContent = text; }
+
+// painel de ajustes
+const dlg = $('#settings');
+$('#btn-settings')?.addEventListener('click', () => dlg.showModal());
+$('#settings-close')?.addEventListener('click', () => dlg.close());
+dlg?.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+
+// ------------------------------------------------------------------ avatar 3D ao vivo na tela inicial
+const preview = { r: null, raf: 0 };
+async function startPreview() {
+  const canvas = $('#preview');
+  if (!canvas || SIM) return;
+  let data;
+  try { data = await preload.avatar; } catch { return; }
+  if (G.renderer) return; // já entrou no mundo
+  const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'low-power' });
+  r.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xfff3e0, 0x2a2e35, 1.7));
+  const key = new THREE.DirectionalLight(0xffffff, 1.7); key.position.set(1.6, 2.4, 2.2); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xd9e27a, 1.6); rim.position.set(-2, 1.4, -2.2); scene.add(rim);
+  const av = new VoxelAvatar(data, { height: 1, silhouette: false });
+  scene.add(av.root);
+  const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
+  cam.position.set(0, 0.6, 2.55); cam.lookAt(0, 0.5, 0);
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const seq = ['hi', 'idle', 'danceCWalk', 'idle', 'cheer', 'danceShuffle', 'vibe'];
+  let si = 0, nextAt = 0;
+  canvas.closest('.portal')?.classList.add('live');
+  preview.r = r;
+  let last = performance.now();
+  const loop = (t) => {
+    preview.raf = requestAnimationFrame(loop);
+    if (document.hidden) return;
+    const dt = Math.min(0.05, (t - last) / 1000); last = t;
+    const w = canvas.clientWidth | 0;
+    if (w && (canvas.width !== Math.round(w * r.getPixelRatio()))) r.setSize(w, w, false);
+    if (!still && t > nextAt) { av.play(seq[si++ % seq.length], { fade: 0.3 }); nextAt = t + 3600; }
+    if (!still) av.root.rotation.y = Math.sin(t / 2600) * 0.55;
+    av.update(still ? 0 : dt);
+    r.render(scene, cam);
+  };
+  preview.raf = requestAnimationFrame(loop);
+}
+function stopPreview() {
+  cancelAnimationFrame(preview.raf);
+  if (preview.r) { preview.r.dispose(); preview.r.forceContextLoss(); preview.r = null; }
+}
+startPreview();
+
 btnAr.onclick = async () => {
   if (!xrSupported) { location.search = '?sim=1'; return; }
-  btnAr.disabled = true; btnAr.textContent = 'Abrindo a câmera…';
+  btnAr.disabled = true; setBtn('Abrindo a câmera…');
   await prepareLandscape();
   startAR().catch((e) => {
     console.error(e);
     btnAr.disabled = false;
     const gesture = /activation|gesture|user/i.test(e.message) || e.name === 'SecurityError';
-    btnAr.textContent = gesture ? 'Tocar para abrir a câmera' : 'Entrar no mundo';
+    setBtn(gesture ? 'Tocar para abrir a câmera' : 'Entrar no mundo');
     $('#why').textContent = gesture ? 'Tela pronta na horizontal. Toque de novo para abrir a câmera.'
       : /denied|permission|NotAllowed/i.test(e.name + e.message)
         ? 'Precisamos da câmera para colocar o avatar no seu mundo. Toque de novo e permita o acesso.'
@@ -105,6 +156,8 @@ const G = {
 
 async function boot() {
   clearInterval(startTimer);
+  stopPreview();
+  if (dlg?.open) dlg.close();
   await preload.rapier;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -137,7 +190,7 @@ async function boot() {
   buildOverlays();
   G.hud = new Hud($('#hud'), pad, { onExit: () => { if (G.session) G.session.end(); else location.href = location.pathname; } });
   G.hud.size(fmtSize(cfg.height));
-  char.onRespawn = () => toast('Voltou para o último lugar seguro');
+  char.onRespawn = () => toast('Caiu onde a câmera não viu — mostre o chão para ele cair lá');
   world.onScores = onCalScores;
   avatar.setSilhouette(world.occlusion);
   addEventListener('resize', () => {
@@ -169,7 +222,8 @@ async function startAR() {
   G.session = session;
   G.refSpace = renderer.xr.getReferenceSpace();
   // em 'local-floor' o ARCore estima o piso em y=0: vira um chão físico de reserva
-  if (type === 'local-floor') G.world.setFloor(0);
+  // em 'local-floor' o y=0 é a ESTIMATIVA de chão do Chrome — só é usada depois de conferida (updateFloor)
+  if (type === 'local-floor') G.floorGuess = 0;
   G.depthFormat = session.depthDataFormat || null;
   G.depthUsage = session.depthUsage || null;
   const viewer = await session.requestReferenceSpace('viewer');
@@ -300,7 +354,7 @@ async function startSim() {
   G.sim = sim;
   addEventListener('resize', () => sim.update());
   G.world.occlusion = false;          // e já se oculta sozinho (no AR o fundo é a câmera)
-  G.world.setFloor(0);
+  G.floorGuess = params.has('floorGuess') ? Number(params.get('floorGuess')) : 0;
   hint('Simulador: mire na mesa e toque em “Colocar aqui” (ou Espaço) · arraste para girar a câmera');
   const clock = new THREE.Clock();
   let lastDepth = -1;
@@ -411,7 +465,7 @@ function tick(t) {
   updateArrow();
   if (G.placed && (G.floorT = (G.floorT || 0) + dt) > 1) {
     G.floorT = 0;
-    if (G.world.floorFromPlanes(G.placeY)) console.info('[chão] plano real em', G.world.floorY.toFixed(3));
+    updateFloor();
   }
   if (t - G.lastHud > 300) { G.lastHud = t; updateHud(); }
   if (t - G.lastState > 100) { G.lastState = t; sendState(); }
@@ -424,13 +478,32 @@ function place() {
   G.avatar.setGhost(false);
   G.avatar.root.visible = true;
   G.char.yaw = Math.atan2(G.camPos.x - p.x, G.camPos.z - p.z); // olhando para você
-  G.placed = true; G.placeY = p.y;
+  G.placed = true; G.placeY = p.y; G.placeCamH = G.camPos.y - p.y;
+  updateFloor();
   G.hud.setPlaced(true);
   G.reticle.visible = false;
   G.char.playEmote('hi');
   hint('');
   pad.rumble(0.3, 0.6, 120);
   anchorAt(p);
+}
+
+/**
+ * Chão físico "infinito" de reserva (cobre o chão que a câmera ainda não mapeou), escolhido com cuidado:
+ *  1) chão real: plano do ARCore pelo menos 30 cm abaixo de onde o avatar está;
+ *  2) avatar colocado no próprio chão (celular a mais de 90 cm acima da superfície): o chão é essa superfície;
+ *  3) estimativa 'local-floor' do Chrome, SÓ se estiver 30 cm abaixo da mesa — o Chrome às vezes estima o
+ *     chão na altura da mesa (quando só a mesa foi vista), e aí o avatar andava no ar em vez de cair.
+ *  Sem nada disso: sem chão de reserva — ele cai de verdade e cai nos voxels do chão mapeado pelo depth.
+ */
+function updateFloor() {
+  const w = G.world;
+  if (!G.placed || w.floorFromPlanes(G.placeY)) return;
+  let y = null;
+  if (G.placeCamH > 0.9) y = G.placeY;
+  else if (G.floorGuess !== undefined && G.placeY - G.floorGuess >= 0.3) y = G.floorGuess;
+  if (y === null) { if (w.floor) w.removeFloor(); }
+  else if (w.floorSource !== 'guess' || Math.abs(w.floorY - y) > 0.01) w.setFloor(y, 'guess');
 }
 
 /** cria uma âncora do ARCore no ponto (o avatar fica preso ao lugar físico mesmo com correções do rastreamento) */
@@ -516,7 +589,10 @@ function handleButtons() {
     toast('Altura: ' + fmtSize(cfg.height));
   }
   if (pad.pressed(B.R3)) {
-    if (G.reticleHit) { const p = G.retSmooth.clone(); spawnAt(p); G.placeY = p.y; anchorAt(p); toast('Avatar trazido para o alvo'); }
+    if (G.reticleHit) {
+      const p = G.retSmooth.clone(); spawnAt(p); G.placeY = p.y; G.placeCamH = G.camPos.y - p.y; anchorAt(p); updateFloor();
+      toast('Avatar trazido para o alvo');
+    }
     else toast('Mire numa superfície para trazer o avatar');
   }
 }

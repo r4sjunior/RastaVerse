@@ -167,11 +167,16 @@ export class World {
   }
 
   /** chão de reserva (plano grande) na altura estimada do piso — cobre o chão que a câmera ainda não viu */
-  setFloor(y) {
+  setFloor(y, source = 'planes') {
     if (this.floor) this.physics.removeCollider(this.floor, false);
     this.floor = this.physics.createCollider(this.R.ColliderDesc.cuboid(50, 0.05, 50).setTranslation(0, y - 0.05, 0).setFriction(0.9));
-    this.floorY = y;
+    this.floorY = y; this.floorSource = source;
     if (y < this.minY) this.minY = y;
+  }
+
+  removeFloor() {
+    if (this.floor) this.physics.removeCollider(this.floor, false);
+    this.floor = null; this.floorY = undefined; this.floorSource = null;
   }
 
   /**
@@ -182,8 +187,9 @@ export class World {
   floorFromPlanes(refY) {
     let best = null;
     for (const p of this.planes) if (p.n >= 6 && p.y < refY - 0.3 && (!best || p.n > best.n)) best = p;
-    if (best && (this.floorY === undefined || Math.abs(best.y - this.floorY) > 0.015)) { this.setFloor(best.y); return true; }
-    return false;
+    if (!best) return false;
+    if (this.floorSource !== 'planes' || Math.abs(best.y - this.floorY) > 0.015) this.setFloor(best.y, 'planes');
+    return true;
   }
 
   /** raio para baixo: altura do chão sob (x,z), ignorando um colisor */
