@@ -5,6 +5,8 @@ import { B } from './gamepad.js';
 import { DESTS } from './portals.js';
 
 /** ícone de portal (anel com redemoinho) na cor do jogo de destino */
+/** ícone do portal reggae (anel vermelho/amarelo/verde) */
+const REGGAE_ICON = '<svg viewBox="0 0 24 24"><defs><radialGradient id="pgr"><stop offset="0" stop-color="#fff"/><stop offset=".35" stop-color="#ffd21a"/><stop offset=".7" stop-color="#14c43c"/><stop offset="1" stop-color="#ec1c24"/></radialGradient></defs><ellipse cx="12" cy="11" rx="7.2" ry="8.6" fill="url(#pgr)"/><path d="M4.8 11a7.2 8.6 0 0 1 3.6-7.45" fill="none" stroke="#ec1c24" stroke-width="2.4"/><path d="M8.4 3.55a7.2 8.6 0 0 1 10.8 7.45" fill="none" stroke="#ffd21a" stroke-width="2.4"/><path d="M19.2 11a7.2 8.6 0 0 1-14.4 0" fill="none" stroke="#14c43c" stroke-width="2.4"/><ellipse cx="12" cy="21.3" rx="6" ry="1.2" fill="#14c43c" opacity=".6"/></svg>';
 const portalIcon = (c1, c2) => `<svg viewBox="0 0 24 24"><defs><radialGradient id="pg${c1}"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#${c2.toString(16).padStart(6, '0')}"/><stop offset="1" stop-color="#${c1.toString(16).padStart(6, '0')}"/></radialGradient></defs><ellipse cx="12" cy="11" rx="7.2" ry="8.6" fill="url(#pg${c1})"/><ellipse cx="12" cy="11" rx="7.2" ry="8.6" fill="none" stroke="#${c1.toString(16).padStart(6, '0')}" stroke-width="2"/><path d="M12 6.5c2.6 0 3.4 3.4 1.2 4.6-1.6.9-3.2-.8-2-2" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" opacity=".85"/><ellipse cx="12" cy="21.3" rx="6" ry="1.2" fill="#${c1.toString(16).padStart(6, '0')}" opacity=".55"/></svg>`;
 
 const ICON = {
@@ -100,8 +102,9 @@ export class Hud {
           <div class="h-grab"></div>
           <div class="h-ghead"><b>Portais RastaVerse</b><small>Leve o avatar até um portal para entrar em outro jogo</small></div>
           <div class="h-pcards">
-            <button class="h-pall" data-portal="all"><i>${portalIcon(0xd9e27a, 0x2ee6a8)}</i><span><b>Abrir os 3 portais</b><small>Entre andando no portal do jogo que quiser</small></span></button>
-            <div class="h-prow">${Object.entries(DESTS).map(([id, d]) => `<button data-portal="${id}"><i>${portalIcon(d.c1, d.c2)}</i><b>${d.name}</b></button>`).join('')}</div>
+            <button class="h-pwallet" data-portal="wallet"><i>${REGGAE_ICON}</i><span><b>RastaWallet</b><small>Portal reggae para a carteira CryptoRastas</small></span></button>
+            <div class="h-prow">${Object.entries(DESTS).filter(([, d]) => !d.reggae).map(([id, d]) => `<button data-portal="${id}"><i>${portalIcon(d.c1, d.c2)}</i><b>${d.name}</b></button>`).join('')}</div>
+            <button class="h-pall" data-portal="all"><i>${portalIcon(0xd9e27a, 0x2ee6a8)}</i><span><b>Abrir todos os portais</b><small>Entre andando no portal que quiser</small></span></button>
           </div>
           <div class="h-ghead h-mhead"><b>Minigames</b><small>Tudo acontece na sua mesa e no seu chão de verdade</small></div>
           <div class="h-gcards">${GAMES.map((g, i) => `<button data-game="${g.id}"><i>${GAME_ICON[g.id] || ''}</i><span><b>${g.name}</b><small>${g.desc}</small><em data-best="${g.id}"></em></span></button>`).join('')}</div>

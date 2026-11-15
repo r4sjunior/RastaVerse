@@ -161,6 +161,10 @@ nivelado com ele. Leve o avatar até um portal: ele é sugado (giro, clarão, so
 [Rasta Memo](https://rastamemo.vercel.app/), [Rasta Runner](https://rastarunner.vercel.app/),
 [Rastetris](https://rastetris.vercel.app/). Destinos, cores e nomes ficam em `DESTS` (`web/js/portals.js`).
 
+**RastaWallet** ([app.cryptorastas.com](https://app.cryptorastas.com/)): portal especial nas cores do reggae
+(`reggae: true` em `DESTS`) — anel em 3 arcos vermelho/amarelo/verde pulsando no ritmo one drop, espiral
+tricolor, faíscas tricolores e anéis no chão; cartão em destaque no topo do painel Jogos.
+
 ## Aparelhos sem WebXR AR (iPhone, Android sem ARCore)
 
 `web/js/camview.js`: câmera traseira em vídeo ao fundo + giroscópio (DeviceOrientation, com o pedido de
