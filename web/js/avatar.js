@@ -85,7 +85,7 @@ export class VoxelAvatar {
     // silhueta "raio-x": aparece só onde o avatar está ATRÁS de algo real (mesa, objeto),
     // para ele nunca sumir. Desenhada depois do oclusor e antes do avatar (renderOrder).
     this.silhouetteMat = opts.silhouette === false ? null : new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xd9e27a).multiplyScalar(0.55), blending: THREE.AdditiveBlending,
+      color: new THREE.Color(0xd9e27a).multiplyScalar(0.22), blending: THREE.AdditiveBlending,
       depthWrite: false, depthFunc: THREE.GreaterDepth,
     });
     const geoCache = {};

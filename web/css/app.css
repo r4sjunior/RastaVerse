@@ -48,7 +48,9 @@ button { font: inherit; }
 /* =================================================================== HUD */
 #hud { position: fixed; inset: 0; z-index: 5; pointer-events: none; user-select: none; -webkit-user-select: none; color: #fff;
   --safe-t: max(10px, env(safe-area-inset-top)); --safe-b: max(16px, env(safe-area-inset-bottom));
-  --safe-l: max(14px, env(safe-area-inset-left)); --safe-r: max(14px, env(safe-area-inset-right)); }
+  --safe-l: max(14px, env(safe-area-inset-left)); --safe-r: max(14px, env(safe-area-inset-right));
+  /* tamanhos que acompanham a tela (celular pequeno → tablet) */
+  --joy: clamp(116px, 36vmin, 190px); --act: clamp(168px, 48vmin, 280px); --round: clamp(38px, 11vmin, 50px); }
 #hud button { pointer-events: auto; color: #fff; border: 0; touch-action: none; cursor: pointer; }
 #hud svg { width: 22px; height: 22px; fill: currentColor; display: block; }
 
@@ -63,7 +65,7 @@ button { font: inherit; }
 .h-status[data-state="warn"] i { background: var(--bad); }
 @keyframes pulse { 50% { opacity: .25; } }
 .h-top-r { display: flex; gap: 8px; }
-.h-round { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--glass);
+.h-round { width: var(--round); height: var(--round); border-radius: 50%; display: grid; place-items: center; background: var(--glass);
   border: 1px solid var(--glass-line) !important; backdrop-filter: blur(8px); }
 .h-round:active, .h-round.on { background: var(--accent); color: var(--accent-ink) !important; }
 .h-diag { position: absolute; top: calc(var(--safe-t) + 52px); left: var(--safe-l); right: var(--safe-r); display: flex; flex-wrap: wrap; gap: 6px; }
@@ -90,25 +92,26 @@ button { font: inherit; }
 
 /* joystick flutuante */
 .h-joyzone { position: absolute; left: 0; bottom: 0; width: 52%; height: 50%; pointer-events: auto; touch-action: none; }
-.h-joy { position: absolute; left: calc(var(--safe-l) + 72px); top: calc(100% - var(--safe-b) - 84px); width: 140px; height: 140px; margin: -70px 0 0 -70px;
+.h-joy { position: absolute; left: calc(var(--safe-l) + var(--joy) / 2 + 4px); top: calc(100% - var(--safe-b) - var(--joy) / 2 - 10px);
+  width: var(--joy); height: var(--joy); margin: calc(var(--joy) / -2) 0 0 calc(var(--joy) / -2);
   border-radius: 50%; border: 2px solid rgba(255, 255, 255, .28); background: radial-gradient(circle, rgba(14, 16, 19, .15), rgba(14, 16, 19, .4));
   display: grid; place-items: center; opacity: .55; transition: opacity .15s, border-color .15s; pointer-events: none; }
 .h-joy.active { opacity: 1; border-color: rgba(217, 226, 122, .75); transition: opacity .1s; }
 .h-joy.sprint { border-color: var(--rasta-r); box-shadow: 0 0 0 6px rgba(200, 55, 45, .25); }
-.h-knob { width: 58px; height: 58px; border-radius: 50%; background: rgba(217, 226, 122, .9); box-shadow: 0 4px 14px rgba(0, 0, 0, .35); }
+.h-knob { width: 41%; height: 41%; border-radius: 50%; background: rgba(217, 226, 122, .9); box-shadow: 0 4px 14px rgba(0, 0, 0, .35); }
 .h-joy.sprint .h-knob { background: #ff8a6a; }
 
 /* botões de ação (arco) */
-.h-actions { position: absolute; right: var(--safe-r); bottom: var(--safe-b); width: 196px; height: 196px; }
+.h-actions { position: absolute; right: var(--safe-r); bottom: var(--safe-b); width: var(--act); height: var(--act); }
 .h-act { position: absolute; border-radius: 50%; display: grid; place-items: center; background: var(--glass) !important;
   border: 1px solid var(--glass-line) !important; backdrop-filter: blur(8px); transition: transform .08s; }
 .h-act.on { transform: scale(.92); }
-.h-act.a-jump { right: 0; bottom: 0; width: 92px; height: 92px; background: var(--accent) !important; color: var(--accent-ink) !important; align-content: center; }
+.h-act.a-jump { right: 0; bottom: 0; width: 47%; height: 47%; background: var(--accent) !important; color: var(--accent-ink) !important; align-content: center; }
 .h-act.a-jump svg { width: 30px; height: 30px; }
 .h-act.a-jump b { font-size: 11px; font-weight: 700; margin-top: -2px; }
-.h-act.a-ball { right: 104px; bottom: 6px; width: 60px; height: 60px; color: #ff9d8f !important; }
-.h-act.a-box { right: 84px; bottom: 84px; width: 60px; height: 60px; color: #9be38f !important; }
-.h-act.a-hi { right: 6px; bottom: 104px; width: 60px; height: 60px; color: #f3c9ff !important; }
+.h-act.a-ball { right: 53%; bottom: 3%; width: 31%; height: 31%; color: #ff9d8f !important; }
+.h-act.a-box { right: 43%; bottom: 43%; width: 31%; height: 31%; color: #9be38f !important; }
+.h-act.a-hi { right: 3%; bottom: 53%; width: 31%; height: 31%; color: #f3c9ff !important; }
 .h-act.on:not(.a-jump) { background: rgba(255, 255, 255, .25) !important; }
 .h-act { align-content: center; }
 .h-act:not(.a-jump) svg { width: 26px; height: 26px; }
@@ -134,3 +137,47 @@ button { font: inherit; }
 .h-size button { font-size: 22px; padding: 6px 0; }
 .h-size span { text-align: center; font-size: 17px; font-weight: 700; }
 #hud.menu-open .h-joyzone, #hud.menu-open .h-actions { visibility: hidden; }
+
+/* =================================================================== responsivo */
+/* horizontal (celular deitado): HUD mais baixo, joystick e ações nos cantos, menu vira painel lateral */
+@media (orientation: landscape) and (max-height: 600px) {
+  #hud { --joy: clamp(110px, 38vmin, 170px); --act: clamp(150px, 50vmin, 230px); --round: clamp(36px, 10vmin, 44px);
+    --safe-b: max(12px, env(safe-area-inset-bottom)); --safe-l: max(18px, env(safe-area-inset-left)); --safe-r: max(18px, env(safe-area-inset-right)); }
+  .h-status { max-width: 46vw; padding: 7px 12px 7px 10px; }
+  .h-hint { top: calc(var(--safe-t) + 48px); font-size: 13px; padding: 8px 14px; }
+  .h-diag { top: calc(var(--safe-t) + 46px); }
+  .h-toast { top: 26%; }
+  .h-joyzone { width: 46%; height: 78%; }
+  .h-place { bottom: calc(var(--safe-b) + 10px); }
+  .h-place-btn { padding: 14px 28px; }
+  .h-sheet { align-items: stretch; justify-content: flex-end; }
+  .h-sheet-in { width: min(440px, 60vw); max-height: 100%; overflow-y: auto; border-radius: 20px 0 0 20px; border-top: 0;
+    border-left: 1px solid var(--glass-line); padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px 16px;
+    animation-name: side; }
+  .h-grab { display: none; }
+  .h-sec { margin-top: 8px; }
+}
+@keyframes side { from { transform: translateX(30px); opacity: 0; } }
+/* telas muito estreitas */
+@media (max-width: 340px) {
+  .h-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .h-status { max-width: 52vw; }
+}
+/* tablets: menu centralizado com largura confortável */
+@media (min-width: 760px) and (min-height: 600px) {
+  .h-sheet { justify-content: center; }
+  .h-sheet-in { max-width: 620px; border-radius: 20px 20px 0 0; }
+}
+
+/* tela inicial na horizontal: avatar à esquerda, texto e botão à direita */
+@media (orientation: landscape) and (max-height: 600px) {
+  #start { max-width: 860px; min-height: 100svh; padding: 12px 24px; }
+  .hero { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto; column-gap: 32px; align-items: center;
+    justify-items: start; text-align: left; padding: 8px 0; }
+  .hero-avatar { grid-row: 1 / span 6; width: clamp(56px, 16vh, 90px); margin: 0; }
+  .hero h1 { font-size: 30px; }
+  .hero h1::after { margin-left: 0; }
+  .hero .tag { margin: 10px 0 16px; max-width: 420px; }
+  .enter { width: min(100%, 360px); padding: 16px 28px; }
+  .hero .cam, .why { text-align: left; max-width: 420px; }
+}

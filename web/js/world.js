@@ -45,6 +45,9 @@ export class World {
     // o ruído do depth fica alguns cm acima/abaixo da superfície: a oclusão desce um pouco
     // para não "comer" os pés do avatar; objetos de verdade (copo, caixa) continuam ocultando
     this.occluder.position.y = -0.02;
+    // desligada por padrão: no celular o depth tem "fantasmas" (pontos soltos no ar/bordas) que
+    // escondiam o avatar. Liga pelo menu (Oclusão) quando o mapa estiver limpo.
+    this.occluder.visible = false;
   }
 
   /** registra a altura de um plano horizontal do ARCore (hit-test) */

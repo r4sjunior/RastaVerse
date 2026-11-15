@@ -15,13 +15,21 @@ const SIM = params.has('sim');
 const DANCES = ['danceBreakin', 'danceCWalk', 'danceShuffle', 'danceHype', 'danceSnoop', 'danceTechno', 'vibe'];
 
 // ------------------------------------------------------------------ preferências
-const cfg = { height: 0.25, res: 0.03 };
+const cfg = { height: 0.25, res: 0.03, orient: 'landscape' };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem('rastame.cfg') || '{}')); } catch { /* sem storage */ }
 const saveCfg = () => { try { localStorage.setItem('rastame.cfg', JSON.stringify(cfg)); } catch { /* ok */ } };
 $('#opt-height').value = String(cfg.height);
 $('#opt-res').value = String(cfg.res);
 $('#opt-height').onchange = (e) => { cfg.height = Number(e.target.value); saveCfg(); };
 $('#opt-res').onchange = (e) => { cfg.res = Number(e.target.value); saveCfg(); };
+$('#opt-orient').value = cfg.orient;
+$('#opt-orient').onchange = (e) => { cfg.orient = e.target.value; saveCfg(); };
+
+/** gira para a horizontal (precisa de tela cheia; no AR a camada do HUD já é tela cheia) */
+async function lockOrientation() {
+  if (cfg.orient !== 'landscape' || !screen.orientation?.lock) return;
+  try { await screen.orientation.lock('landscape'); } catch { /* navegador não deixou: segue o celular */ }
+}
 
 // ------------------------------------------------------------------ pré-carregamento
 // física (WASM) e avatar já carregam enquanto a tela inicial está aberta: a câmera abre sem espera
@@ -158,7 +166,8 @@ async function startAR() {
   }
   // toque na tela (fora dos botões) coloca o avatar onde a câmera mira
   session.addEventListener('select', () => { if (!G.placed) place(); });
-  session.addEventListener('end', () => location.reload());
+  session.addEventListener('end', () => { try { screen.orientation?.unlock?.(); } catch { /* ok */ } location.reload(); });
+  lockOrientation();
   hint('Mova o celular devagar sobre a mesa ou o chão');
   renderer.setAnimationLoop(onXRFrame);
 }
@@ -272,6 +281,7 @@ async function startSim() {
   const { Sim } = await import('./sim.js');
   const sim = new Sim(G.scene, G.camera, G.renderer.domElement);
   G.sim = sim;
+  addEventListener('resize', () => sim.update());
   G.world.occlusion = false;          // e já se oculta sozinho (no AR o fundo é a câmera)
   G.world.setFloor(0);
   hint('Simulador: mire na mesa e toque em “Colocar aqui” (ou Espaço) · arraste para girar a câmera');

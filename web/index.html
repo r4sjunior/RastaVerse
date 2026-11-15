@@ -21,7 +21,7 @@
     <h1>RastaME <span>MR</span></h1>
     <p class="tag">Seu avatar no mundo real. Aponte a câmera para uma mesa ou o chão e controle com o joystick.</p>
     <button id="btn-ar" class="enter">Entrar no mundo</button>
-    <p class="cam">O navegador vai pedir permissão para usar a câmera.</p>
+    <p class="cam">O navegador vai pedir permissão para usar a câmera. Melhor na horizontal.</p>
     <p id="why" class="why"></p>
   </section>
 
@@ -41,6 +41,12 @@
           <option value="0.25" selected>25 cm</option>
           <option value="0.5">50 cm</option>
           <option value="1.75">1,75 m (real)</option>
+        </select>
+      </label>
+      <label>Tela no mundo
+        <select id="opt-orient">
+          <option value="landscape" selected>Horizontal</option>
+          <option value="free">Seguir o celular</option>
         </select>
       </label>
       <label>Detalhe da física

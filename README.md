@@ -47,7 +47,11 @@ O WebXR só abre em página HTTPS. Publicando na Vercel o app já sai em HTTPS:
    - **joystick flutuante**: encoste o polegar em qualquer lugar da metade esquerda; arrastar além da borda = correr;
    - **Pular** (botão grande), **Bola**, **Caixa**, **Oi** no canto direito;
    - topo: **alvo** (traz o avatar para onde a câmera mira), **⋯** menu (emotes, tamanho, malha, oclusão, gravar), **✕** sair.
-   Se o avatar sair da tela, uma **seta** na borda aponta para ele; atrás de objetos reais ele aparece como **silhueta**.
+   Se o avatar sair da tela, uma **seta** na borda aponta para ele.
+   O app entra no mundo **na horizontal** (opção "Tela no mundo" nas configurações para seguir o giro do celular)
+   e o layout se adapta a retrato, paisagem e tablet.
+   A **oclusão** (avatar escondido atrás de objetos reais) vem **desligada**: o depth do celular tem ruído que fazia
+   o avatar sumir. Ligue no menu ⋯ › Oclusão quando o mapa estiver limpo (aí ele aparece como silhueta atrás das coisas).
    Com o PS4 pareado, os controles da tela somem e vale o controle.
 
 Na Vercel não há backend: o AR, a física e o avatar funcionam 100% no celular; só a nuvem de pontos no PC
