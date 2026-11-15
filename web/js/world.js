@@ -3,8 +3,7 @@
 // Os mesmos voxels viram malha invisível de oclusão (o avatar some atrás de objetos reais)
 // (a sombra do avatar cai num disco ShadowMaterial embaixo dele — ver app.js).
 import * as THREE from 'three';
-import { VoxelMap, unpackKey } from '/shared/voxelmap.js';
-import { unprojectDepth } from '/shared/depth.js';
+import { unpackKey } from '/shared/voxelmap.js';
 
 export const G = 9.81;
 
@@ -15,11 +14,18 @@ export class World {
     this.res = res;
     this.carveOn = carve;
     this.physics = new RAPIER.World({ x: 0, y: -G, z: 0 });
-    this.map = new VoxelMap({ res, hit: 2, miss: 1, occ: 4, max: 24, trackY: true });
+    // o mapa de voxels vive num Worker (mapper.worker.js): o depth não trava a tela
+    this.worker = new Worker(new URL('./mapper.worker.js', import.meta.url), { type: 'module' });
+    this.worker.postMessage({ t: 'init', res });
+    this.worker.onmessage = (e) => this._onWorker(e.data);
+    this.busy = false;               // um quadro por vez no worker (descarta se ainda está ocupado)
+    this.onScores = null;
+    this.surfaceBuf = [];
     this.colliders = new Map();      // key -> collider
     this.slot = new Map();           // key -> índice da instância
     this.keys = [];                  // índice -> key
-    this.pendingAdd = []; this.pendingRemove = [];
+    this.pendingAdd = new Map();     // key -> topo da superfície
+    this.pendingRemove = new Set();
     this.capacity = capacity;
     this.minY = Infinity;            // voxel mais baixo conhecido (chão provável)
     this.points = 0;
@@ -58,40 +64,51 @@ export class World {
     else { this.planes.push({ y, n: 1 }); if (this.planes.length > 12) { this.planes.sort((a, b) => b.n - a.n); this.planes.length = 10; } }
   }
 
-  /** se y está na faixa de ruído de um plano conhecido, devolve a altura do plano */
-  snapToPlane(y) {
-    for (const p of this.planes) if (p.n >= 3 && y > p.y - 0.04 && y < p.y + 0.035) return p.y;
-    return null;
-  }
 
   set debug(v) { this.debugMesh.visible = v; }
   get debug() { return this.debugMesh.visible; }
   set occlusion(v) { this.occluder.visible = v; }
   get occlusion() { return this.occluder.visible; }
 
-  /** quadro de depth (formato de shared/protocol.js) -> evidência no mapa */
-  ingestDepth(f, step = 3) {
-    let i = 0;
-    const map = this.map, carve = this.carveOn, planes = this.planes.length > 0;
-    this.points += unprojectDepth(f, (x, y, z, ox, oy, oz) => {
-      // depth ruidoso: pontos rentes a um plano do ARCore são colados no plano (a mesa fica lisa)
-      if (planes) { const py = this.snapToPlane(y); if (py !== null) y = py - 0.002; }
-      map.addPoint(x, y, z);
-      if (carve && (i++ % 4) === 0) map.carve(ox, oy, oz, x, y, z, 160);
-    }, { step, maxDepth: 4, flipY: this.flipY });
+  /**
+   * quadro de depth -> worker. Devolve false se o worker ainda está ocupado (o quadro é descartado:
+   * melhor perder um quadro de depth do que travar a tela). calib = ponto do alvo para autocalibração.
+   */
+  ingestDepth(f, step = 2, { ingest = true, calib = null } = {}) {
+    if (this.busy) return false;
+    this.busy = true;
+    const planes = this.planes.map((p) => ({ y: p.y, n: p.n }));
+    this.worker.postMessage({ t: 'frame', f, step, planes, flipY: this.flipY, ingest, calib }, [f.data.buffer]);
+    return true;
   }
 
   /** ponto de superfície vindo do hit-test (planos do ARCore) — funciona sem Depth API */
-  addSurfacePoint(x, y, z, w = 1) { this.addPlaneHeight(y); this.map.addPoint(x, y - 0.002, z, w); }
+  addSurfacePoint(x, y, z) {
+    this.addPlaneHeight(y);
+    this.surfaceBuf.push(x, y, z);
+    if (this.surfaceBuf.length >= 48) this.flushSurface();
+  }
 
-  /** aplica as mudanças do mapa nos colisores e malhas (com orçamento por quadro) */
-  sync(budget = 1500) {
-    const d = this.map.drain();
-    for (const k of d.removed) this.pendingRemove.push(k);
-    for (const k of d.added) this.pendingAdd.push(k);
+  flushSurface() {
+    if (!this.surfaceBuf.length) return;
+    const pts = Float32Array.from(this.surfaceBuf); this.surfaceBuf.length = 0;
+    this.worker.postMessage({ t: 'surface', pts }, [pts.buffer]);
+  }
+
+  _onWorker(m) {
+    if (m.t !== 'delta') return;
+    this.busy = false;
+    const a = m.added, r = m.removed;
+    for (let i = 0; i < r.length; i++) { const k = r[i]; this.pendingAdd.delete(k); this.pendingRemove.add(k); }
+    for (let i = 0; i < a.length; i += 2) { const k = a[i]; this.pendingRemove.delete(k); this.pendingAdd.set(k, a[i + 1]); }
+    if (m.scores) this.onScores?.(m.scores);
+  }
+
+  /** aplica as mudanças do mapa nos colisores e malhas (com orçamento por quadro: sem picos) */
+  sync(budget = 120) {
     let n = 0;
-    while (this.pendingRemove.length && n < budget) { this._remove(this.pendingRemove.pop()); n++; }
-    while (this.pendingAdd.length && n < budget) { this._add(this.pendingAdd.pop()); n++; }
+    for (const k of this.pendingRemove) { if (n >= budget) break; this._remove(k); this.pendingRemove.delete(k); n++; }
+    for (const [k, top] of this.pendingAdd) { if (n >= budget) break; this._add(k, top); this.pendingAdd.delete(k); n++; }
     if (n) {
       for (const m of [this.occluder, this.debugMesh]) {
         m.count = this.keys.length; m.instanceMatrix.needsUpdate = true;
@@ -100,13 +117,12 @@ export class World {
     }
   }
 
-  _add(key) {
-    if (this.slot.has(key) || !this.map.isOccupied(key)) return;
+  _add(key, top) {
+    if (this.slot.has(key)) return;
     if (this.keys.length >= this.capacity) return;
     const [i, j, k] = unpackKey(key, this._t);
     const r = this.res;
     // o topo do colisor fica na altura média medida (não no topo quantizado do voxel)
-    const top = this.map.surfaceTop(key, j);
     const hy = (top - j * r) / 2;
     const x = (i + 0.5) * r, y = j * r + hy, z = (k + 0.5) * r;
     const col = this.physics.createCollider(
@@ -127,7 +143,7 @@ export class World {
 
   _remove(key) {
     const idx = this.slot.get(key);
-    if (idx === undefined || this.map.isOccupied(key)) return;
+    if (idx === undefined) return;
     const col = this.colliders.get(key);
     if (col) this.physics.removeCollider(col, false);
     this.colliders.delete(key); this.slot.delete(key);
@@ -144,9 +160,9 @@ export class World {
   }
 
   clear() {
-    this.map.clear();
-    this.pendingAdd.length = 0;
-    this.sync(1e9);
+    this.worker.postMessage({ t: 'clear' });
+    this.pendingAdd.clear();
+    for (const k of this.keys) this.pendingRemove.add(k);
     this.minY = Infinity;
   }
 
@@ -172,7 +188,8 @@ export class World {
 
   /** raio para baixo: altura do chão sob (x,z), ignorando um colisor */
   groundBelow(x, y, z, maxDist = 3, exclude = null) {
-    const ray = new this.R.Ray({ x, y, z }, { x: 0, y: -1, z: 0 });
+    const ray = this._ray || (this._ray = new this.R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }));
+    ray.origin.x = x; ray.origin.y = y; ray.origin.z = z;
     const hit = this.physics.castRay(ray, maxDist, true, undefined, undefined, exclude || undefined);
     return hit ? y - hit.timeOfImpact : null;
   }
@@ -216,7 +233,8 @@ export class World {
     this.physics.timestep = Math.min(Math.max(dt, 1 / 240), 1 / 30);
     this.physics.step();
     const floor = (Number.isFinite(this.minY) ? this.minY : 0) - 4;
-    for (const p of [...this.props]) {
+    for (let i = this.props.length - 1; i >= 0; i--) {
+      const p = this.props[i];
       const t = p.body.translation(), q = p.body.rotation();
       if (t.y < floor) { this.removeProp(p); continue; }
       p.mesh.position.set(t.x, t.y, t.z); p.mesh.quaternion.set(q.x, q.y, q.z, q.w);

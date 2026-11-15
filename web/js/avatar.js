@@ -106,6 +106,7 @@ export class VoxelAvatar {
           const s = new THREE.Mesh(geoCache[b.part], this.silhouetteMat);
           s.renderOrder = -5; s.name = b.part + ':silhueta';
           g.add(s);
+          (this.silhouettes ||= []).push(s);
         }
       }
     });
@@ -133,6 +134,9 @@ export class VoxelAvatar {
     this.model.scale.setScalar(this.scale);
     this.model.position.y = -this.voxelFootY * this.scale;
   }
+
+  /** silhueta só faz sentido com a oclusão ligada (senão são 17 desenhos a mais por quadro) */
+  setSilhouette(on) { for (const s of this.silhouettes || []) s.visible = on; }
 
   /** prévia translúcida (antes de colocar no mundo) */
   setGhost(on) {

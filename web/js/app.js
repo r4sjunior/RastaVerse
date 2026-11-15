@@ -7,7 +7,6 @@ import { Character } from './character.js';
 import { Pad, B } from './gamepad.js';
 import { Link } from './net.js';
 import { Hud } from './hud.js';
-import { scoreOrientation } from '/shared/depth.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -25,10 +24,21 @@ $('#opt-res').onchange = (e) => { cfg.res = Number(e.target.value); saveCfg(); }
 $('#opt-orient').value = cfg.orient;
 $('#opt-orient').onchange = (e) => { cfg.orient = e.target.value; saveCfg(); };
 
-/** gira para a horizontal (precisa de tela cheia; no AR a camada do HUD já é tela cheia) */
-async function lockOrientation() {
-  if (cfg.orient !== 'landscape' || !screen.orientation?.lock) return;
-  try { await screen.orientation.lock('landscape'); } catch { /* navegador não deixou: segue o celular */ }
+/**
+ * Gira para a horizontal ANTES de abrir a câmera (tela cheia + trava), para a sessão de AR já nascer
+ * deitada — girar no meio da sessão deixa a imagem ruim. Espera a rotação assentar.
+ */
+async function prepareLandscape() {
+  if (cfg.orient !== 'landscape' || !screen.orientation?.lock) return false;
+  if (innerWidth > innerHeight) return true;
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    await screen.orientation.lock('landscape');
+    const t0 = performance.now();
+    while (innerWidth <= innerHeight && performance.now() - t0 < 900) await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 150));
+    return innerWidth > innerHeight;
+  } catch { return false; }
 }
 
 // ------------------------------------------------------------------ pré-carregamento
@@ -66,15 +76,19 @@ const startTimer = setInterval(() => {
   setCheck('#ck-srv', link.ok ? 'ok' : 'warn', link.ok ? `conectado · voxel ${(link.server.voxel || 0) * 100} cm` : 'offline (o AR funciona, mas sem nuvem de pontos no PC)');
 }, 300);
 
-btnAr.onclick = () => {
+btnAr.onclick = async () => {
   if (!xrSupported) { location.search = '?sim=1'; return; }
   btnAr.disabled = true; btnAr.textContent = 'Abrindo a câmera…';
+  await prepareLandscape();
   startAR().catch((e) => {
     console.error(e);
-    btnAr.disabled = false; btnAr.textContent = 'Entrar no mundo';
-    $('#why').textContent = /denied|permission|NotAllowed/i.test(e.name + e.message)
-      ? 'Precisamos da câmera para colocar o avatar no seu mundo. Toque de novo e permita o acesso.'
-      : 'Não deu para abrir a câmera: ' + e.message;
+    btnAr.disabled = false;
+    const gesture = /activation|gesture|user/i.test(e.message) || e.name === 'SecurityError';
+    btnAr.textContent = gesture ? 'Tocar para abrir a câmera' : 'Entrar no mundo';
+    $('#why').textContent = gesture ? 'Tela pronta na horizontal. Toque de novo para abrir a câmera.'
+      : /denied|permission|NotAllowed/i.test(e.name + e.message)
+        ? 'Precisamos da câmera para colocar o avatar no seu mundo. Toque de novo e permita o acesso.'
+        : 'Não deu para abrir a câmera: ' + e.message;
   });
 };
 if (SIM) startSim().catch((e) => { console.error(e); $('#why').textContent = 'Falha no simulador: ' + e.message; });
@@ -97,6 +111,7 @@ async function boot() {
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;   // a sombra é recalculada a cada 2 quadros (ver tick)
   document.body.appendChild(renderer.domElement);
   document.body.classList.add('running');
   $('#start').hidden = true; $('#hud').hidden = false;
@@ -107,7 +122,7 @@ async function boot() {
   scene.add(new THREE.HemisphereLight(0xfff6e8, 0x5a5048, 1.5));
   const sun = new THREE.DirectionalLight(0xffffff, 1.8);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.mapSize.set(512, 512);
   sun.shadow.bias = -0.0005;
   sun.shadow.normalBias = 0.004;
   scene.add(sun, sun.target);
@@ -123,6 +138,8 @@ async function boot() {
   G.hud = new Hud($('#hud'), pad, { onExit: () => { if (G.session) G.session.end(); else location.href = location.pathname; } });
   G.hud.size(fmtSize(cfg.height));
   char.onRespawn = () => toast('Voltou para o último lugar seguro');
+  world.onScores = onCalScores;
+  avatar.setSilhouette(world.occlusion);
   addEventListener('resize', () => {
     if (renderer.xr.isPresenting) return;
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
@@ -144,6 +161,8 @@ async function startAR() {
   await boot();
   const { renderer } = G;
   renderer.xr.enabled = true;
+  // 80% da resolução nativa: ~36% menos pixels por quadro, diferença quase invisível na tela do celular
+  renderer.xr.setFramebufferScaleFactor(0.8);
   const type = await session.requestReferenceSpace('local-floor').then(() => 'local-floor', () => 'local');
   renderer.xr.setReferenceSpaceType(type);
   await renderer.xr.setSession(session);
@@ -167,12 +186,12 @@ async function startAR() {
   // toque na tela (fora dos botões) coloca o avatar onde a câmera mira
   session.addEventListener('select', () => { if (!G.placed) place(); });
   session.addEventListener('end', () => { try { screen.orientation?.unlock?.(); } catch { /* ok */ } location.reload(); });
-  lockOrientation();
   hint('Mova o celular devagar sobre a mesa ou o chão');
   renderer.setAnimationLoop(onXRFrame);
 }
 
 const _m = new THREE.Matrix4();
+const _hitPos = new THREE.Vector3();
 function onXRFrame(t, frame) {
   const { renderer } = G;
   const ref = renderer.xr.getReferenceSpace();
@@ -189,11 +208,10 @@ function onXRFrame(t, frame) {
       const p = hits[0].getPose(ref);
       if (p) {
         _m.fromArray(p.transform.matrix);
-        const up = new THREE.Vector3(_m.elements[4], _m.elements[5], _m.elements[6]);
-        if (up.y > 0.75) {
-          G.reticleHit = new THREE.Vector3().setFromMatrixPosition(_m);
+        if (_m.elements[5] > 0.75) {          // normal para cima: mesa/chão
+          G.reticleHit = _hitPos.setFromMatrixPosition(_m);
           G.centerHit = hits[0];
-          G.world.addPlaneHeight(G.reticleHit.y);
+          G.world.addPlaneHeight(_hitPos.y);
         }
       }
     }
@@ -215,18 +233,22 @@ function onXRFrame(t, frame) {
         const r = frame.getHitTestResults(src)[0];
         const p = r?.getPose(ref);
         // só superfícies horizontais (mesa, chão); paredes ficam por conta do depth
-        if (p && p.transform.matrix[5] > 0.9) { const m = p.transform.matrix; G.world.addSurfacePoint(m[12], m[13], m[14], 1); }
+        if (p && p.transform.matrix[5] > 0.9) { const m = p.transform.matrix; G.world.addSurfacePoint(m[12], m[13], m[14]); }
       }
+      G.world.flushSurface();
     }
     // depth do ARCore (~8 Hz local, ~5 Hz para o backend)
     if (t - G.lastDepth > 140) {
       G.lastDepth = t;
-      const f = readDepth(frame, pose.views[0]);
-      if (f && calibrateDepth(f)) {
+      const f = !G.world.busy && readDepth(frame, pose.views[0]);
+      if (f) {
         f.flipY = G.world.flipY;
-        G.depthOk = true; G.depthFrames++;
-        G.world.ingestDepth(f, cfg.res >= 0.04 ? 3 : 2);
-        if (t - G.lastSend > 190 && link.sendDepth(f)) G.lastSend = t;
+        if (cal.done && t - G.lastSend > 190 && link.sendDepth(f)) G.lastSend = t;   // antes: o buffer vai para o worker
+        const r = G.reticleHit;
+        const calib = !cal.done && r ? { x: r.x, y: r.y, z: r.z } : null;
+        if (G.world.ingestDepth(f, cfg.res >= 0.04 ? 3 : 2, { ingest: cal.done, calib })) {
+          if (cal.done) { G.depthOk = true; G.depthFrames++; } else if (++cal.tries > 120) finishCal();
+        }
       }
     }
   }
@@ -236,26 +258,21 @@ function onXRFrame(t, frame) {
 
 // A convenção vertical do depth pode variar entre aparelhos/versões do Chrome. Antes de usar o depth,
 // compara as duas hipóteses contra o plano do hit-test (verdade do ARCore) por alguns quadros.
+// (a conta roda no worker; aqui só os votos)
 const cal = { done: false, a: 0, b: 0, n: 0, tries: 0 };
-function calibrateDepth(f) {
-  if (cal.done) return true;
-  cal.tries++;
-  const r = G.reticleHit;
-  if (r) {
-    const [ea, eb] = scoreOrientation(f, r.y, r.x, r.z);
-    if (Number.isFinite(ea) || Number.isFinite(eb)) {
-      cal.n++;
-      // só conta voto para "invertido" com evidência forte (erro bem menor e o normal claramente ruim)
-      if (eb < ea * 0.4 && ea > 0.04) cal.b++; else cal.a++;
-      G.calErr = [ea, eb];
-    }
-  }
-  if (cal.n >= 8 || cal.tries > 120) {
-    cal.done = true;
-    G.world.flipY = cal.b >= 6;           // padrão: orientação normal (a que funcionou no 1º teste)
-    console.info('[depth] orientação', G.world.flipY ? 'invertida' : 'normal', cal, G.calErr);
-  }
-  return cal.done;
+function onCalScores([ea, eb]) {
+  if (cal.done || !(Number.isFinite(ea) || Number.isFinite(eb))) return;
+  cal.n++;
+  // só conta voto para "invertido" com evidência forte (erro bem menor e o normal claramente ruim)
+  if (eb < ea * 0.4 && ea > 0.04) cal.b++; else cal.a++;
+  G.calErr = [ea, eb];
+  if (cal.n >= 8) finishCal();
+}
+function finishCal() {
+  if (cal.done) return;
+  cal.done = true;
+  G.world.flipY = cal.b >= 6;             // padrão: orientação normal (a que funcionou no 1º teste)
+  console.info('[depth] orientação', G.world.flipY ? 'invertida' : 'normal', cal, G.calErr);
 }
 
 let depthSeq = 0;
@@ -296,11 +313,13 @@ async function startSim() {
     G.camera.getWorldDirection(G.camFwd);
     if (t - lastDepth > 250) {
       lastDepth = t;
-      const f = sim.depthFrame(simNoise);
-      for (const p of sim.hitGrid()) G.world.addSurfacePoint(p.x, p.y, p.z, 1);
-      G.depthOk = true; G.depthFrames++;
-      G.world.ingestDepth(f, 1);
-      link.sendDepth(f);
+      for (const p of sim.hitGrid()) G.world.addSurfacePoint(p.x, p.y, p.z);
+      G.world.flushSurface();
+      if (!G.world.busy) {
+        const f = sim.depthFrame(simNoise);
+        link.sendDepth(f);
+        if (G.world.ingestDepth(f, 1)) { G.depthOk = true; G.depthFrames++; }
+      }
     }
     G.reticleHit = sim.hitTest();
     if (G.reticleHit) G.world.addPlaneHeight(G.reticleHit.y);
@@ -322,7 +341,7 @@ function buildOverlays() {
   ret.add(new THREE.Mesh(new THREE.CircleGeometry(0.006, 16).rotateX(-Math.PI / 2), retMat));
   ret.children.forEach((m) => { m.renderOrder = 20; });
   ret.visible = false; scene.add(ret); G.reticle = ret; G.reticleMat = retMat;
-  G.retSmooth = new THREE.Vector3(); G.retHist = [];
+  G.retSmooth = new THREE.Vector3(); G.retHist = []; G.retPool = Array.from({ length: 12 }, () => new THREE.Vector3()); G.retIdx = 0;
   // anéis do analógico (como no vídeo): faixa grande = alcance, anel pequeno = posição do stick
   const ringMat = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.35, depthWrite: false });
   const knobMat = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.9, depthWrite: false });
@@ -364,7 +383,8 @@ function tick(t) {
   G.fps += ((dt > 0 ? 1 / dt : 60) - G.fps) * 0.05;
   pad.poll();
   const { world, char } = G;
-  world.sync(SIM ? 4000 : 350);
+  world.sync(SIM ? 600 : 120);
+  if ((G.shadowN = (G.shadowN || 0) + 1) % 2 === 0) G.renderer.shadowMap.needsUpdate = true;
 
   updateReticle(dt);
 
@@ -429,7 +449,8 @@ function updateReticle(dt) {
   if (!r) { G.retHist.length = 0; G.retStable = false; return; }
   if (G.retHist.length === 0 || G.retSmooth.distanceTo(r) > 0.25) G.retSmooth.copy(r);
   else G.retSmooth.lerp(r, Math.min(1, dt * 14));
-  G.retHist.push(r.clone()); if (G.retHist.length > 12) G.retHist.shift();
+  const slot = G.retPool[G.retIdx++ % 12].copy(r);
+  if (G.retHist.length < 12) G.retHist.push(slot);
   let spread = 0;
   for (const h of G.retHist) spread = Math.max(spread, h.distanceTo(G.retSmooth));
   G.retStable = G.retHist.length >= 8 && spread < 0.012;
@@ -503,7 +524,10 @@ function handleButtons() {
 /** botões que valem mesmo antes de colocar o avatar */
 function handleGlobalButtons() {
   const { world } = G;
-  if (pad.pressed(B.L3) && !G.sim) { world.occlusion = !world.occlusion; toast('Oclusão ' + (world.occlusion ? 'ligada' : 'desligada')); }
+  if (pad.pressed(B.L3) && !G.sim) {
+    world.occlusion = !world.occlusion; G.avatar.setSilhouette(world.occlusion);
+    toast('Oclusão ' + (world.occlusion ? 'ligada' : 'desligada'));
+  }
   if (pad.pressed(B.OPTIONS)) { world.debug = !world.debug; toast(world.debug ? 'Malha de voxels visível' : 'Malha de voxels oculta'); }
   if (pad.pressed(B.SHARE)) {
     if (!link.ok) toast('Backend offline — não dá para gravar');
@@ -522,7 +546,7 @@ function throwBall() {
 
 function updateStick(dt) {
   const s = G.stick;
-  const active = G.placed && pad.lm > 0;
+  const active = G.placed && pad.lm > 0 && pad.connected;
   s.alpha += ((active ? 1 : 0) - s.alpha) * Math.min(1, dt * (active ? 12 : 3));
   s.group.visible = s.alpha > 0.02;
   if (!s.group.visible) return;

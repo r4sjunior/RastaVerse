@@ -111,7 +111,7 @@ animações, edite o dicionário `ANIMS`. Paleta é BGR; o espaço é mão-esque
 ```
 server/server.js      backend: estáticos, WebSocket, fusão de voxels, gravação, PLY
 shared/               código comum celular+servidor: depth.js (desprojeção), voxelmap.js, protocol.js, mat4.js
-web/index.html        app AR/simulador · js/app.js (loop), world.js (Rapier + voxels), character.js,
+web/index.html        app AR/simulador · js/app.js (loop), world.js (Rapier + colisores), mapper.worker.js (depth → voxels), character.js,
                       avatar.js, gamepad.js, hud.js (HUD, joystick, menu), net.js, sim.js · viewer.html + js/viewer.js
 tools/                vox2json.py, reconstruct_open3d.py, make-cert.mjs, build.mjs (gera dist/ para a Vercel)
 test/                 npm test — matemática do depth (inclui buffer girado de celular em retrato), protocolo, mapa
@@ -127,6 +127,15 @@ O depth do ARCore em mesas lisas tem vários cm de ruído. Para o avatar não af
 - a oclusão desce 2 cm, então o ruído da superfície não esconde os pés.
 
 No simulador dá para reproduzir: `?sim=1&noise=0.04` (4% de ruído).
+
+## Desempenho
+
+- o depth do ARCore é processado num **Web Worker** (`web/js/mapper.worker.js`): a tela nunca espera o mapa;
+- colisores entram aos poucos (120 por quadro), mapa limitado a 2,8 m da câmera;
+- AR renderizado a 80% da resolução nativa, sombra 512 px recalculada a cada 2 quadros;
+- HUD sem `backdrop-filter` (desfoque sobre a câmera custava caro na GPU todo quadro).
+
+No simulador com CPU 4× mais lenta: de ~4,6 para ~27 FPS (quadro típico de 267 ms para 24 ms).
 
 ## Limites conhecidos
 

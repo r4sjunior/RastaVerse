@@ -2,7 +2,7 @@
   --bg: #121418; --panel: #1b1e24; --line: #2b2f37; --fg: #eeeadf; --muted: #9a9ca3;
   --accent: #d9e27a; --accent-ink: #15170f; --ok: #6fd08c; --warn: #f0b84f; --bad: #ef6a5a;
   --rasta-r: #c8372d; --rasta-y: #e8c23a; --rasta-g: #3f8f3a;
-  --glass: rgba(14, 16, 19, .58); --glass-hi: rgba(14, 16, 19, .78); --glass-line: rgba(255, 255, 255, .12);
+  --glass: rgba(14, 16, 19, .66); --glass-hi: rgba(14, 16, 19, .82); --glass-line: rgba(255, 255, 255, .12);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -57,7 +57,7 @@ button { font: inherit; }
 /* topo */
 .h-top { position: absolute; top: var(--safe-t); left: var(--safe-l); right: var(--safe-r); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .h-status { display: flex; align-items: center; gap: 8px; padding: 9px 14px 9px 12px; border-radius: 99px; background: var(--glass);
-  border: 1px solid var(--glass-line) !important; backdrop-filter: blur(8px); font-size: 13px; font-weight: 600; max-width: 62vw; }
+  border: 1px solid var(--glass-line) !important; font-size: 13px; font-weight: 600; max-width: 62vw; }
 .h-status span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .h-status i { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
 .h-status[data-state="search"] i { background: var(--warn); animation: pulse 1.1s ease-in-out infinite; }
@@ -66,7 +66,7 @@ button { font: inherit; }
 @keyframes pulse { 50% { opacity: .25; } }
 .h-top-r { display: flex; gap: 8px; }
 .h-round { width: var(--round); height: var(--round); border-radius: 50%; display: grid; place-items: center; background: var(--glass);
-  border: 1px solid var(--glass-line) !important; backdrop-filter: blur(8px); }
+  border: 1px solid var(--glass-line) !important; }
 .h-round:active, .h-round.on { background: var(--accent); color: var(--accent-ink) !important; }
 .h-diag { position: absolute; top: calc(var(--safe-t) + 52px); left: var(--safe-l); right: var(--safe-r); display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { background: var(--glass-hi); padding: 4px 9px; border-radius: 99px; font-size: 12px; }
@@ -104,7 +104,7 @@ button { font: inherit; }
 /* botões de ação (arco) */
 .h-actions { position: absolute; right: var(--safe-r); bottom: var(--safe-b); width: var(--act); height: var(--act); }
 .h-act { position: absolute; border-radius: 50%; display: grid; place-items: center; background: var(--glass) !important;
-  border: 1px solid var(--glass-line) !important; backdrop-filter: blur(8px); transition: transform .08s; }
+  border: 1px solid var(--glass-line) !important; transition: transform .08s; }
 .h-act.on { transform: scale(.92); }
 .h-act.a-jump { right: 0; bottom: 0; width: 47%; height: 47%; background: var(--accent) !important; color: var(--accent-ink) !important; align-content: center; }
 .h-act.a-jump svg { width: 30px; height: 30px; }
@@ -124,7 +124,7 @@ button { font: inherit; }
 
 /* menu (folha inferior) */
 .h-sheet { position: absolute; inset: 0; background: rgba(0, 0, 0, .25); pointer-events: auto; display: flex; align-items: flex-end; }
-.h-sheet-in { width: 100%; padding: 10px 16px calc(var(--safe-b) + 8px); background: rgba(18, 20, 24, .92); backdrop-filter: blur(12px);
+.h-sheet-in { width: 100%; padding: 10px 16px calc(var(--safe-b) + 8px); background: rgba(18, 20, 24, .96);
   border-radius: 20px 20px 0 0; border-top: 1px solid var(--glass-line); animation: up .18s ease-out; }
 @keyframes up { from { transform: translateY(30px); opacity: 0; } }
 .h-grab { width: 42px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .25); margin: 0 auto 6px; }
