@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "RastaME — Realidade Mista",
+  "name": "RastaME",
   "short_name": "RastaME",
-  "description": "Coloque seu avatar voxel rasta no mundo real: ele anda, pula e cai nas superfícies de verdade, em escala 1:1. Minigames e portais RastaVerse.",
+  "description": "Minigames e portais RastaVerse.",
   "lang": "pt-BR",
   "start_url": "/",
   "scope": "/",
